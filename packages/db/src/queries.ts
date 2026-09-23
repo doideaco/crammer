@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { and, count, desc, eq, gte, sql } from "drizzle-orm";
 import type { Level, Stage } from "@crammer/schema";
 import type { Database } from "./client.js";
@@ -282,6 +283,55 @@ export async function claimNextQueuedVideo(db: Database): Promise<VideoRow | und
     returning *
   `);
   return (rows as unknown as VideoRow[])[0];
+}
+
+/**
+ * Creates or rotates a video's share token and returns it.
+ *
+ * Rotating is how a share is revoked: the old token stops resolving, so every link
+ * already sent goes dead. There is no other way to take back a URL someone already has.
+ */
+export async function shareVideo(
+  db: Database,
+  input: { id: string; userId: string },
+): Promise<string | undefined> {
+  const token = randomBytes(24).toString("base64url");
+  const [row] = await db
+    .update(videos)
+    .set({ shareToken: token, updatedAt: new Date() })
+    .where(and(eq(videos.id, input.id), eq(videos.userId, input.userId)))
+    .returning();
+  return row ? token : undefined;
+}
+
+/** Stops a shared video resolving, without deleting anything. */
+export async function unshareVideo(
+  db: Database,
+  input: { id: string; userId: string },
+): Promise<void> {
+  await db
+    .update(videos)
+    .set({ shareToken: null, updatedAt: new Date() })
+    .where(and(eq(videos.id, input.id), eq(videos.userId, input.userId)));
+}
+
+/**
+ * Finds a video by its share token.
+ *
+ * Deliberately has no user parameter: holding the token is the authorisation. Only
+ * finished videos resolve, so a share link cannot be used to watch a run in progress
+ * or to read the error from a failed one.
+ */
+export async function getSharedVideo(
+  db: Database,
+  token: string,
+): Promise<VideoRow | undefined> {
+  const [row] = await db
+    .select()
+    .from(videos)
+    .where(and(eq(videos.shareToken, token), eq(videos.status, "succeeded")))
+    .limit(1);
+  return row;
 }
 
 /** Removes a video and, by cascade, its events. */

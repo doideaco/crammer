@@ -3,10 +3,17 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { createVideo, getDatabase, GlobalLimitError, RateLimitError } from "@crammer/db";
+import {
+  createVideo,
+  getDatabase,
+  GlobalLimitError,
+  RateLimitError,
+  shareVideo,
+  unshareVideo,
+} from "@crammer/db";
 import { createJobQueue } from "@crammer/jobs";
 import { createClient } from "@/lib/supabase/server";
-import { currentUser } from "@/lib/auth";
+import { currentUser, requireUser } from "@/lib/auth";
 import { CreateVideoInput, EmailInput, firstIssue } from "@/lib/validation";
 import { PENDING_COOKIE, PENDING_MAX_AGE_SECONDS } from "@/lib/pending";
 import { siteUrl } from "@/lib/site";
@@ -70,6 +77,26 @@ export async function createVideoAction(
   await createJobQueue().enqueue({ id: videoId });
   revalidatePath("/videos");
   redirect(`/videos/${videoId}`);
+}
+
+/**
+ * Creates or rotates a video's share link.
+ *
+ * Rotating is also how a share is revoked, so this is deliberately not idempotent:
+ * pressing it again invalidates the link already sent.
+ */
+export async function shareVideoAction(formData: FormData): Promise<void> {
+  const user = await requireUser();
+  const id = String(formData.get("videoId") ?? "");
+  await shareVideo(getDatabase(), { id, userId: user.id });
+  revalidatePath(`/videos/${id}`);
+}
+
+export async function unshareVideoAction(formData: FormData): Promise<void> {
+  const user = await requireUser();
+  const id = String(formData.get("videoId") ?? "");
+  await unshareVideo(getDatabase(), { id, userId: user.id });
+  revalidatePath(`/videos/${id}`);
 }
 
 export async function signOutAction(): Promise<void> {

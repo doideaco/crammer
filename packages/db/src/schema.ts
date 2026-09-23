@@ -74,6 +74,13 @@ export const videos = pgTable(
      * caps, because it cost nothing to record.
      */
     imported: boolean("imported").notNull().default(false),
+    /**
+     * Unguessable token that makes this video viewable without signing in.
+     *
+     * Null means not shared. Rotating it revokes every link already sent, which is the
+     * only way to take back a URL that is already in someone's inbox.
+     */
+    shareToken: text("share_token").unique(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     completedAt: timestamp("completed_at", { withTimezone: true }),

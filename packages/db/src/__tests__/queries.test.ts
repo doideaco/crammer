@@ -3,6 +3,9 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDatabase, type Database } from "../client.js";
 import {
   GlobalLimitError,
+  getSharedVideo,
+  shareVideo,
+  unshareVideo,
   dailyVideoLimit,
   globalVideoLimit,
   countVideosInWindow,
@@ -142,6 +145,69 @@ suite("queries (live database)", () => {
     expect(await remainingGlobalVideos(db)).toBe(0);
 
     for (const id of people) await db.execute(`delete from users where id = '${id}'` as never);
+  });
+
+  it("shares a finished video by token, and only a finished one", async () => {
+    process.env.CRAMMER_GLOBAL_VIDEO_LIMIT = "1000";
+    process.env.CRAMMER_DAILY_VIDEO_LIMIT = "1000";
+    const video = await createVideo(db, {
+      userId,
+      topic: "A topic that will be shared",
+      level: "beginner",
+    });
+
+    const token = await shareVideo(db, { id: video.id, userId });
+    expect(token).toBeTruthy();
+
+    // A run in progress must not resolve: a share link is for finished work, not a
+    // window onto a job that may yet fail.
+    expect(await getSharedVideo(db, token!)).toBeUndefined();
+
+    await markStatus(db, video.id, "succeeded");
+    expect((await getSharedVideo(db, token!))?.id).toBe(video.id);
+  });
+
+  it("only the owner can share, and revoking kills the link", async () => {
+    process.env.CRAMMER_GLOBAL_VIDEO_LIMIT = "1000";
+    process.env.CRAMMER_DAILY_VIDEO_LIMIT = "1000";
+    const video = await createVideo(db, {
+      userId,
+      topic: "Another topic to be shared",
+      level: "beginner",
+    });
+    await markStatus(db, video.id, "succeeded");
+
+    // Someone else cannot mint a link for a video they do not own.
+    expect(await shareVideo(db, { id: video.id, userId: randomUUID() })).toBeUndefined();
+
+    const token = await shareVideo(db, { id: video.id, userId });
+    expect(await getSharedVideo(db, token!)).toBeDefined();
+
+    await unshareVideo(db, { id: video.id, userId });
+    expect(await getSharedVideo(db, token!)).toBeUndefined();
+  });
+
+  it("rotating the token breaks the link already sent", async () => {
+    process.env.CRAMMER_GLOBAL_VIDEO_LIMIT = "1000";
+    process.env.CRAMMER_DAILY_VIDEO_LIMIT = "1000";
+    const video = await createVideo(db, {
+      userId,
+      topic: "A topic whose link gets rotated",
+      level: "beginner",
+    });
+    await markStatus(db, video.id, "succeeded");
+
+    const first = await shareVideo(db, { id: video.id, userId });
+    const second = await shareVideo(db, { id: video.id, userId });
+
+    expect(second).not.toBe(first);
+    // This is the only way to take back a URL that is already in someone's inbox.
+    expect(await getSharedVideo(db, first!)).toBeUndefined();
+    expect(await getSharedVideo(db, second!)).toBeDefined();
+  });
+
+  it("an unknown token resolves to nothing", async () => {
+    expect(await getSharedVideo(db, "not-a-real-token")).toBeUndefined();
   });
 
   it("claims one queued video per worker", async () => {

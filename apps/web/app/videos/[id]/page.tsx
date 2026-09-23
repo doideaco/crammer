@@ -5,7 +5,9 @@ import { createArtifactStore } from "@crammer/jobs";
 import { requireUser } from "@/lib/auth";
 import { VideoProgress } from "@/components/VideoProgress";
 import { PromptBox } from "@/components/PromptBox";
+import { ShareLink } from "@/components/ShareLink";
 import { formatDuration, formatPence } from "@/lib/format";
+import { siteUrl } from "@/lib/site";
 
 export default async function VideoPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -75,6 +77,19 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
           }}
         />
       )}
+
+      {finished ? (
+        <section className="flex flex-col gap-4">
+          <div>
+            <span className="kicker">Share</span>
+            <div className="mt-2 rule" />
+          </div>
+          <ShareLink
+            videoId={id}
+            url={video.shareToken ? `${siteUrl()}/watch/${video.shareToken}` : null}
+          />
+        </section>
+      ) : null}
 
       {transcript ? (
         <section className="flex flex-col gap-4">

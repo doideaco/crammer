@@ -1,7 +1,7 @@
 import { createReadStream, statSync } from "node:fs";
 import { Readable } from "node:stream";
 import { NextResponse } from "next/server";
-import { getDatabase, getVideoForUser } from "@crammer/db";
+import { getDatabase, getSharedVideo, getVideoForUser } from "@crammer/db";
 import { LocalArtifactStore, localMediaRoot } from "@crammer/jobs";
 import { currentUser } from "@/lib/auth";
 
@@ -33,13 +33,25 @@ export async function GET(
     return NextResponse.json({ error: "Not found." }, { status: 404 });
   }
 
-  // Deliverables are private to their owner, so this checks the session rather than
-  // trusting an unguessable id.
-  const user = await currentUser();
-  if (!user) return NextResponse.json({ error: "Not signed in." }, { status: 401 });
+  // Deliverables are private to their owner. A share token is the other way in: it is
+  // the same authorisation the watch page runs on, and without this a shared video
+  // would play in production (public bucket URLs) but not locally, where the files are
+  // served from here.
+  const db = getDatabase();
+  const token = new URL(request.url).searchParams.get("t");
 
-  const video = await getVideoForUser(getDatabase(), { id: videoId, userId: user.id });
-  if (!video) return NextResponse.json({ error: "Not found." }, { status: 404 });
+  const video = token
+    ? await getSharedVideo(db, token)
+    : await (async () => {
+        const user = await currentUser();
+        if (!user) return undefined;
+        return getVideoForUser(db, { id: videoId, userId: user.id });
+      })();
+
+  // Same response for "not yours", "bad token" and "does not exist".
+  if (!video || video.id !== videoId) {
+    return NextResponse.json({ error: "Not found." }, { status: 404 });
+  }
 
   const file = new LocalArtifactStore(localMediaRoot()).pathForOutput(videoId, name);
 
