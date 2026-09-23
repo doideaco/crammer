@@ -5,9 +5,10 @@ import { puppeteer } from "@trigger.dev/build/extensions/puppeteer";
 /**
  * Trigger.dev configuration.
  *
- * `TRIGGER_PROJECT_REF` comes from the Trigger.dev dashboard. Without it — and without
- * TRIGGER_SECRET_KEY — the web app falls back to the polling worker, which is a
- * supported way to run M2 rather than a degraded one.
+ * The project ref is the one from the Trigger.dev dashboard; `TRIGGER_PROJECT_REF`
+ * overrides it for anyone deploying into a different project. Without
+ * TRIGGER_SECRET_KEY the web app falls back to the polling worker, which is a supported
+ * way to run M2 rather than a degraded one.
  *
  * The render stage drives a headless browser and stitches with ffmpeg, so the image
  * needs both:
@@ -20,7 +21,7 @@ import { puppeteer } from "@trigger.dev/build/extensions/puppeteer";
  *   one installed on a Mac — which is why `external` leaves them to the runtime install.
  */
 export default defineConfig({
-  project: process.env.TRIGGER_PROJECT_REF ?? "proj_crammer",
+  project: process.env.TRIGGER_PROJECT_REF ?? "proj_zaytdbmlxrrqjeqoojto",
   dirs: ["./jobs/src/trigger"],
   maxDuration: 7200,
   retries: {
@@ -55,8 +56,29 @@ export default defineConfig({
           .filter((entry): entry is { name: string; value: string } => Boolean(entry.value)),
       ),
     ],
-    // Native and platform-specific binaries must be installed in the image for its own
-    // platform, not bundled from a developer's machine.
-    external: ["sharp", "@remotion/compositor-linux-x64-gnu", "@remotion/renderer"],
+    /**
+     * Left to the image's own install rather than bundled.
+     *
+     * Two different reasons, both fatal if ignored:
+     *
+     * - Native and platform-specific binaries (`sharp`, Remotion's compositor) must be
+     *   installed for the image's platform, not copied from a developer's Mac.
+     * - `@remotion/bundler` pulls in rspack and webpack, which load native `.node`
+     *   bindings through `require`. Bundling those produces a CommonJS shim that fails
+     *   at import with "Assignment to constant variable" — the task never starts, and
+     *   the error points at rspack rather than at anything in this repo.
+     */
+    external: [
+      "sharp",
+      "@remotion/renderer",
+      "@remotion/bundler",
+      "@remotion/compositor-linux-x64-gnu",
+      "@remotion/compositor-linux-x64-musl",
+      "@rspack/core",
+      "@rspack/binding",
+      "@rspack/plugin-react-refresh",
+      "webpack",
+      "esbuild",
+    ],
   },
 });

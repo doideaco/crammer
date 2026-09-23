@@ -1,4 +1,4 @@
-import { logger, task, type TaskOptions } from "@trigger.dev/sdk";
+import { logger, task } from "@trigger.dev/sdk";
 import { STAGES, type Stage } from "@crammer/schema";
 import { getDatabase, markStatus } from "@crammer/db";
 import { createArtifactStore } from "../storage-factory.js";
@@ -12,64 +12,79 @@ function deps() {
 }
 
 /**
- * How long each stage may take, and how hard to retry it.
+ * Builds one stage task.
  *
  * Research and render are the long ones — research waits on a dozen web searches,
  * render drives a headless browser for several minutes. Retries are worth it because
- * the usual failure is a provider hiccup, not bad input; a declined topic throws
- * `TopicRefusedError` and is excluded below, since retrying a refusal just spends money
- * to be told no again.
+ * the usual failure is a provider hiccup, not bad input; a refusal is a decision, so
+ * `catchError` stops it being retried and paid for again.
  */
-const STAGE_OPTIONS: Record<Stage, { maxDuration: number; retries: number }> = {
-  research: { maxDuration: 900, retries: 3 },
-  script: { maxDuration: 600, retries: 3 },
-  factcheck: { maxDuration: 900, retries: 3 },
-  storyboard: { maxDuration: 600, retries: 3 },
-  images: { maxDuration: 900, retries: 2 },
-  voice: { maxDuration: 900, retries: 2 },
-  render: { maxDuration: 3600, retries: 1 },
-};
-
-function optionsFor(stage: Stage): Pick<TaskOptions<string, Payload>, "maxDuration" | "retry"> {
-  const { maxDuration, retries } = STAGE_OPTIONS[stage];
-  return {
-    maxDuration,
-    retry: { maxAttempts: retries + 1, factor: 2, minTimeoutInMs: 5_000, maxTimeoutInMs: 60_000 },
-  };
+function stageTask(
+  id: string,
+  stage: Stage,
+  options: { maxDuration: number; retries: number },
+) {
+  return task({
+    id,
+    maxDuration: options.maxDuration,
+    retry: {
+      maxAttempts: options.retries + 1,
+      factor: 2,
+      minTimeoutInMs: 5_000,
+      maxTimeoutInMs: 60_000,
+    },
+    run: async (payload: Payload) => {
+      await runStageForVideo(stage, payload.videoId, deps());
+      return { stage, videoId: payload.videoId };
+    },
+    catchError: async ({ error }) => {
+      if (error instanceof TopicRefusedError) return { skipRetrying: true };
+      return;
+    },
+  });
 }
 
-/**
- * One task per stage, so each is retried independently and a flaky image search never
- * costs a re-run of the research that preceded it.
- */
-export const stageTasks = Object.fromEntries(
-  STAGES.map((stage) => [
-    stage,
-    task({
-      id: `video.${stage}`,
-      ...optionsFor(stage),
-      run: async (payload: Payload) => {
-        await runStageForVideo(stage, payload.videoId, deps());
-        return { stage, videoId: payload.videoId };
-      },
-      catchError: async ({ error }) => {
-        // A refusal is a decision. Retrying it spends money to be told no again.
-        if (error instanceof TopicRefusedError) return { skipRetrying: true };
-        return;
-      },
-    }),
-  ]),
-) as Record<Stage, ReturnType<typeof task<string, Payload>>>;
+// Each task is its own top-level export with a literal id. Trigger.dev discovers tasks
+// by scanning a module's exports, so one tucked inside an object is never found — the
+// deploy succeeds and the task silently does not exist. Literal ids rather than
+// `video.${stage}` so that searching the repo for a task id actually finds it.
+export const researchTask = stageTask("video.research", "research", {
+  maxDuration: 900,
+  retries: 3,
+});
+export const scriptTask = stageTask("video.script", "script", { maxDuration: 600, retries: 3 });
+export const factcheckTask = stageTask("video.factcheck", "factcheck", {
+  maxDuration: 900,
+  retries: 3,
+});
+export const storyboardTask = stageTask("video.storyboard", "storyboard", {
+  maxDuration: 600,
+  retries: 3,
+});
+export const imagesTask = stageTask("video.images", "images", { maxDuration: 900, retries: 2 });
+export const voiceTask = stageTask("video.voice", "voice", { maxDuration: 900, retries: 2 });
+export const renderTask = stageTask("video.render", "render", { maxDuration: 3600, retries: 1 });
+
+/** Lookup for the orchestrator, built from the exported tasks rather than beside them. */
+const STAGE_TASKS = {
+  research: researchTask,
+  script: scriptTask,
+  factcheck: factcheckTask,
+  storyboard: storyboardTask,
+  images: imagesTask,
+  voice: voiceTask,
+  render: renderTask,
+} as const satisfies Record<Stage, unknown>;
 
 /**
  * Drives the stages in order. Each `triggerAndWait` is a separate run with its own
- * retries, and this task just sequences them and owns the final status.
+ * retries; this task only sequences them and owns the final status.
  */
 export const createVideoTask = task({
   id: "create-video",
   maxDuration: 7200,
-  // The orchestrator itself should not retry: the stages already did, and re-running
-  // it would repeat work that succeeded.
+  // The orchestrator itself must not retry: the stages already did, and re-running it
+  // would repeat work that succeeded.
   retry: { maxAttempts: 1 },
   run: async (payload: Payload) => {
     const db = getDatabase();
@@ -77,7 +92,9 @@ export const createVideoTask = task({
     try {
       for (const stage of STAGES) {
         logger.info(`Running ${stage}`, { videoId: payload.videoId });
-        const result = await stageTasks[stage].triggerAndWait(payload);
+        // Awaited one at a time and never inside Promise.all: each of these is a
+        // checkpoint, and wrapping them would break resumption.
+        const result = await STAGE_TASKS[stage].triggerAndWait(payload);
         if (!result.ok) throw new Error(`Stage ${stage} failed: ${result.error}`);
       }
 

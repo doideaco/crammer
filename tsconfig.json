@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "moduleResolution": "bundler",
+    "module": "preserve",
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "types": [
+      "node"
+    ]
+  },
+  "include": [
+    "trigger.config.ts",
+    "scripts/**/*.ts"
+  ]
+}

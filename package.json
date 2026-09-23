@@ -19,7 +19,9 @@
     "studio": "pnpm --filter @crammer/video run studio",
     "sync:env": "tsx scripts/sync-env.ts",
     "test": "turbo run test",
-    "typecheck": "turbo run typecheck",
+    "trigger:deploy": "trigger.dev deploy",
+    "trigger:dev": "trigger.dev dev",
+    "typecheck": "turbo run typecheck && tsc -p tsconfig.json --noEmit",
     "web": "pnpm --filter @crammer/web dev",
     "worker": "pnpm --filter @crammer/jobs worker"
   },

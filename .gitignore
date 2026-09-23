@@ -25,3 +25,6 @@ supabase/.branches/
 # Every env file except the template, which is meant to be committed.
 .env*
 !.env.example
+
+# Trigger.dev local build output
+.trigger
