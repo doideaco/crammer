@@ -221,7 +221,26 @@ September 2026) came to roughly **£2.70** and about 13 minutes wall-clock:
 | render | £0.00 | Local. ~3.5 minutes for 5:29 at 1080p. |
 
 Research is the obvious thing to attack first if this needs to be cheaper — capping
-`maxUses` on the web search tool trades breadth for money directly.
+`maxUses` on the web search tool trades breadth for money directly. Nothing else comes
+close.
+
+### Not paying twice for the same failure
+
+A stage that fails *after* its expensive call re-pays for that call on every retry, so a
+fully retrying run reaches about **£10** — nearly four times a clean one. Two guards:
+
+- **Deterministic failures are not retried.** A fact-check verdict is a decision, not a
+  fault. A missing artefact stays missing, an unset key does not set itself, and
+  structured output that failed validation already exhausted the provider's own retries.
+  These stop at the first attempt in both runners. See `isDeterministicFailure` in
+  `jobs/src/stages.ts`.
+- **A hard ceiling per video**, checked *before* each stage so the expensive call is
+  never made once the budget is gone. £6.00 by default, `CRAMMER_MAX_PENCE_PER_VIDEO` to
+  change. A video stopped this way is marked with a plain explanation rather than a
+  stack trace.
+
+To stop a run already in flight: Trigger.dev dashboard → Runs → Cancel. Anything already
+spent is spent; nothing further accrues.
 
 ## Licences
 

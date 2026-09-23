@@ -166,6 +166,16 @@ video in this repo. Run `pnpm worker` in any container with Chrome and ffmpeg, p
 at the same `DATABASE_URL` and Supabase keys. Leave `TRIGGER_SECRET_KEY` unset and the
 web app will queue rows for it instead.
 
+## Cost controls
+
+A clean run is about £2.70, dominated by research (£1.46). Set a billing limit on the
+Trigger.dev account — it will not cap Anthropic or ElevenLabs charges, but it stops
+runaway task execution.
+
+In the app itself, deterministic failures are not retried and each video has a hard
+spend ceiling (`CRAMMER_MAX_PENCE_PER_VIDEO`, default 600 pence). See the README for
+what counts as deterministic and why.
+
 ## Demo notes
 
 - The daily limit is **3 videos per user**. Raise `DAILY_VIDEO_LIMIT` in
