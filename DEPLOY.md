@@ -71,6 +71,23 @@ the auth callback can create a video row. Requests use the anon key so RLS appli
 vercel deploy --prod
 ```
 
+Two things that are not obvious and will bite:
+
+- **Turn off Deployment Protection.** New projects default to Vercel SSO, so every
+  visitor is bounced to a Vercel login and the demo is unreachable. Project Settings →
+  Deployment Protection → Vercel Authentication → Disabled. The app has its own
+  magic-link auth; nothing is exposed by turning this off.
+- **The pooler hostname is region-specific** and is not `db.<ref>.supabase.co` — that
+  name has no IPv4 record. Copy the exact string from Project Settings → Database →
+  Connection Pooling. For London it is `aws-0-eu-west-2.pooler.supabase.com`, and the
+  user is `postgres.<project-ref>`.
+
+### Email on the free tier
+
+Supabase's built-in SMTP is rate limited to a handful of messages an hour and is not
+meant for production. For a demo in front of people, set a custom SMTP provider in
+Authentication → Emails, or expect magic links to silently stop arriving.
+
 ## 3. Trigger.dev
 
 Create a project at <https://cloud.trigger.dev>, then:

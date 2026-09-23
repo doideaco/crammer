@@ -1,0 +1,13 @@
+# `vercel deploy` from a terminal uploads the working directory, and unlike a
+# git-triggered deploy it does not honour .gitignore fully. Without this it ships the
+# rendered videos in out/ and every node_modules — a 1.7GB upload for a 28MB app.
+#
+# The normal path is a git push, which Vercel builds from the repo.
+node_modules
+out
+.next
+.turbo
+dist
+supabase/.temp
+supabase/.branches
+*.mp4
