@@ -1,0 +1,9 @@
+node_modules/
+dist/
+out/
+.env
+.env.local
+.turbo/
+*.tsbuildinfo
+.DS_Store
+packages/video/.remotion/
