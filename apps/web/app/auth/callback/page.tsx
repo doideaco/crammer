@@ -1,6 +1,13 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { createVideo, ensureUser, getDatabase, GlobalLimitError, RateLimitError } from "@crammer/db";
+import {
+  createVideo,
+  ensureUser,
+  getDatabase,
+  GlobalLimitError,
+  RateLimitError,
+  SpendBudgetError,
+} from "@crammer/db";
 import { createJobQueue } from "@crammer/jobs";
 import { createClient } from "@/lib/supabase/server";
 import { PENDING_COOKIE, PendingRequest } from "@/lib/pending";
@@ -70,7 +77,11 @@ export async function completeSignIn(): Promise<string> {
         await createJobQueue().enqueue({ id: video.id });
         return `/videos/${video.id}`;
       } catch (error) {
-        if (error instanceof RateLimitError || error instanceof GlobalLimitError) {
+        if (
+          error instanceof RateLimitError ||
+          error instanceof GlobalLimitError ||
+          error instanceof SpendBudgetError
+        ) {
           return `/videos?error=${encodeURIComponent(error.message)}`;
         }
         throw error;

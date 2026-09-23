@@ -3,6 +3,9 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDatabase, type Database } from "../client.js";
 import {
   GlobalLimitError,
+  SpendBudgetError,
+  globalSpendLimitPence,
+  spentInWindowPence,
   getSharedVideo,
   shareVideo,
   unshareVideo,
@@ -208,6 +211,57 @@ suite("queries (live database)", () => {
 
   it("an unknown token resolves to nothing", async () => {
     expect(await getSharedVideo(db, "not-a-real-token")).toBeUndefined();
+  });
+
+  it("gives the allowance back when a run fails, but not the money", async () => {
+    process.env.CRAMMER_GLOBAL_VIDEO_LIMIT = "3";
+    process.env.CRAMMER_DAILY_VIDEO_LIMIT = "1000";
+    process.env.CRAMMER_GLOBAL_SPEND_PENCE = "100000";
+    await db.execute("delete from videos where imported = false" as never);
+
+    const video = await createVideo(db, {
+      userId,
+      topic: "A run that is about to break",
+      level: "beginner",
+    });
+    await updateVideo(db, video.id, { costPence: "251" });
+
+    expect(await countVideosInWindow(db)).toBe(1);
+    await markStatus(db, video.id, "failed", { error: "OOM" });
+
+    // The video no longer counts — nobody got a video — but the spend is still there.
+    expect(await countVideosInWindow(db)).toBe(0);
+    expect(await spentInWindowPence(db)).toBe(251);
+  });
+
+  it("stops on the spend budget even when the count says there is room", async () => {
+    process.env.CRAMMER_GLOBAL_VIDEO_LIMIT = "3";
+    process.env.CRAMMER_DAILY_VIDEO_LIMIT = "1000";
+    process.env.CRAMMER_GLOBAL_SPEND_PENCE = "500";
+    await db.execute("delete from videos where imported = false" as never);
+
+    // Two runs that failed after spending. The count forgives them; the budget does not.
+    for (const pence of ["300", "300"]) {
+      const v = await createVideo(db, { userId, topic: `A costly failure ${pence}`, level: "beginner" });
+      await updateVideo(db, v.id, { costPence: pence });
+      await markStatus(db, v.id, "failed", { error: "broke" });
+    }
+
+    expect(await countVideosInWindow(db)).toBe(0);
+    // Without this, forgiving failures would let a broken pipeline spend forever.
+    await expect(
+      createVideo(db, { userId, topic: "One more after the budget is gone", level: "beginner" }),
+    ).rejects.toThrow(SpendBudgetError);
+
+    process.env.CRAMMER_GLOBAL_SPEND_PENCE = "100000";
+  });
+
+  it("defaults the spend budget to something above a few clean runs", () => {
+    delete process.env.CRAMMER_GLOBAL_SPEND_PENCE;
+    process.env.CRAMMER_GLOBAL_VIDEO_LIMIT = "3";
+    // Three clean runs is about 810 pence; the budget must not bite before the count.
+    expect(globalSpendLimitPence()).toBeGreaterThan(810);
+    process.env.CRAMMER_GLOBAL_SPEND_PENCE = "100000";
   });
 
   it("claims one queued video per worker", async () => {

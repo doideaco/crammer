@@ -1,4 +1,10 @@
-import { getDatabase, globalVideoLimit, remainingGlobalVideos } from "@crammer/db";
+import {
+  getDatabase,
+  globalSpendLimitPence,
+  globalVideoLimit,
+  remainingGlobalVideos,
+  spentInWindowPence,
+} from "@crammer/db";
 import { currentUser } from "@/lib/auth";
 import { PromptBox } from "@/components/PromptBox";
 
@@ -17,8 +23,15 @@ export default async function HomePage({
 }) {
   const user = await currentUser();
   const { error } = await searchParams;
-  const remaining = await remainingGlobalVideos(getDatabase());
+  const db = getDatabase();
+  const [remaining, spent] = await Promise.all([
+    remainingGlobalVideos(db),
+    spentInWindowPence(db),
+  ]);
   const limit = globalVideoLimit();
+  const budgetPence = globalSpendLimitPence();
+  // Either running out stops generation, so the form goes when the first one does.
+  const canGenerate = remaining > 0 && spent < budgetPence;
 
   return (
     <div className="flex flex-col gap-16">
@@ -40,22 +53,25 @@ export default async function HomePage({
         ) : null}
 
         <div className="max-w-2xl rounded-sm border border-line bg-paper-soft/50 p-6">
-          {remaining > 0 ? (
+          {canGenerate ? (
             <PromptBox signedIn={Boolean(user)} />
           ) : (
             <div className="flex flex-col gap-2">
               <span className="kicker">Demo limit reached</span>
               <p className="text-ink-soft">
-                This instance is capped at {limit} generated videos so a public demo
-                cannot run up a bill. The finished ones are still there to watch.
+                {remaining > 0
+                  ? `This demo has spent its £${(budgetPence / 100).toFixed(2)} budget.`
+                  : `This instance is capped at ${limit} generated videos so a public demo cannot run up a bill.`}{" "}
+                The finished ones are still there to watch.
               </p>
             </div>
           )}
         </div>
-        {remaining > 0 ? (
+        {canGenerate ? (
           <p className="max-w-2xl text-xs text-ink-muted">
-            Demo instance: {remaining} of {limit} generations left. Each one costs
-            about £2.70 and takes around ten minutes.
+            Demo instance: {remaining} of {limit} generations left, £
+            {((budgetPence - spent) / 100).toFixed(2)} of budget. Each one costs about £2.70 and
+            takes around ten minutes.
           </p>
         ) : null}
       </section>

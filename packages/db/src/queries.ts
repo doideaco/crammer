@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { and, count, desc, eq, gte, sql } from "drizzle-orm";
+import { and, count, desc, eq, gte, notInArray, sql } from "drizzle-orm";
 import type { Level, Stage } from "@crammer/schema";
 import type { Database } from "./client.js";
 import {
@@ -32,6 +32,18 @@ export function dailyVideoLimit(): number {
  */
 export function globalVideoLimit(): number {
   return Number(process.env.CRAMMER_GLOBAL_VIDEO_LIMIT ?? 3);
+}
+
+/**
+ * Total spend allowed across the instance, in pence.
+ *
+ * The count limit and this one answer different questions. The count is what a person
+ * understands — "two videos left". This is what actually bounds the bill, and it has to
+ * exist because the count deliberately forgives failures: without it, a pipeline that
+ * failed every time would hand back the allowance each time and spend forever.
+ */
+export function globalSpendLimitPence(): number {
+  return Number(process.env.CRAMMER_GLOBAL_SPEND_PENCE ?? globalVideoLimit() * 400);
 }
 
 /**
@@ -91,6 +103,19 @@ export class RateLimitError extends Error {
   }
 }
 
+/** Raised when the instance has spent its budget, whatever the video count says. */
+export class SpendBudgetError extends Error {
+  constructor(
+    readonly spentPence: number,
+    readonly limitPence: number,
+  ) {
+    super(
+      `This demo has spent its budget of ${(limitPence / 100).toFixed(2)} pounds. No more videos can be made.`,
+    );
+    this.name = "SpendBudgetError";
+  }
+}
+
 /** Raised when the whole instance is at its cap, not just this user. */
 export class GlobalLimitError extends Error {
   constructor(
@@ -107,18 +132,36 @@ export class GlobalLimitError extends Error {
 }
 
 /**
- * Videos the pipeline has generated across the whole instance, inside the global window.
+ * Videos the pipeline has produced, or is producing, inside the global window.
  *
- * Imported videos are excluded: they were made elsewhere and cost nothing to add, so
- * letting them consume a budget that exists to bound spend would be wrong.
+ * Two exclusions, for different reasons. Imported videos were made elsewhere and cost
+ * nothing to record. Failed and refused ones produced nothing a person can watch, and
+ * charging someone a video for a run that broke — usually not their doing — is a poor
+ * way to treat them. What their spend did cost is caught by the spend limit instead.
  */
 export async function countVideosInWindow(db: Database): Promise<number> {
   const since = new Date(Date.now() - globalWindowHours() * 60 * 60 * 1000);
   const [row] = await db
     .select({ n: count() })
     .from(videos)
-    .where(and(gte(videos.createdAt, since), eq(videos.imported, false)));
+    .where(
+      and(
+        gte(videos.createdAt, since),
+        eq(videos.imported, false),
+        notInArray(videos.status, ["failed", "refused"]),
+      ),
+    );
   return row?.n ?? 0;
+}
+
+/** Everything the pipeline has spent in the window, successful or not. */
+export async function spentInWindowPence(db: Database): Promise<number> {
+  const since = new Date(Date.now() - globalWindowHours() * 60 * 60 * 1000);
+  const [row] = await db
+    .select({ total: sql<string>`coalesce(sum(${videos.costPence}), 0)` })
+    .from(videos)
+    .where(and(gte(videos.createdAt, since), eq(videos.imported, false)));
+  return Number(row?.total ?? 0);
 }
 
 /** How many more the pipeline may generate before the instance is capped. */
@@ -146,10 +189,28 @@ export async function createVideo(
     const [global] = await tx
       .select({ n: count() })
       .from(videos)
-      .where(and(gte(videos.createdAt, globalSince), eq(videos.imported, false)));
+      .where(
+        and(
+          gte(videos.createdAt, globalSince),
+          eq(videos.imported, false),
+          notInArray(videos.status, ["failed", "refused"]),
+        ),
+      );
 
     if ((global?.n ?? 0) >= globalVideoLimit()) {
       throw new GlobalLimitError(globalVideoLimit(), globalWindowHours());
+    }
+
+    // Checked separately from the count, because failures give the count back but
+    // never give the money back.
+    const [spend] = await tx
+      .select({ total: sql<string>`coalesce(sum(${videos.costPence}), 0)` })
+      .from(videos)
+      .where(and(gte(videos.createdAt, globalSince), eq(videos.imported, false)));
+
+    const spent = Number(spend?.total ?? 0);
+    if (spent >= globalSpendLimitPence()) {
+      throw new SpendBudgetError(spent, globalSpendLimitPence());
     }
 
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000);

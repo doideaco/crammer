@@ -8,6 +8,7 @@ import {
   getDatabase,
   GlobalLimitError,
   RateLimitError,
+  SpendBudgetError,
   shareVideo,
   unshareVideo,
 } from "@crammer/db";
@@ -68,7 +69,11 @@ export async function createVideoAction(
     const video = await createVideo(getDatabase(), { userId: user.id, ...parsed.data });
     videoId = video.id;
   } catch (error) {
-    if (error instanceof RateLimitError || error instanceof GlobalLimitError) {
+    if (
+      error instanceof RateLimitError ||
+      error instanceof GlobalLimitError ||
+      error instanceof SpendBudgetError
+    ) {
       return { error: error.message };
     }
     throw error;
