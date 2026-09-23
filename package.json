@@ -9,12 +9,17 @@
   },
   "scripts": {
     "build": "turbo run build",
-    "typecheck": "turbo run typecheck",
-    "test": "turbo run test",
-    "lint": "eslint .",
-    "format": "prettier --write .",
     "crammer": "tsx apps/cli/src/main.ts",
-    "studio": "pnpm --filter @crammer/video run studio"
+    "db:generate": "pnpm --filter @crammer/db generate",
+    "db:migrate": "pnpm --filter @crammer/db migrate",
+    "format": "prettier --write .",
+    "lint": "eslint .",
+    "studio": "pnpm --filter @crammer/video run studio",
+    "sync:env": "tsx scripts/sync-env.ts",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
+    "web": "pnpm --filter @crammer/web dev",
+    "worker": "pnpm --filter @crammer/jobs worker"
   },
   "devDependencies": {
     "@types/node": "26.6.2",
@@ -25,5 +30,8 @@
     "typescript": "6.0.3",
     "typescript-eslint": "8.70.1",
     "vitest": "5.0.1"
+  },
+  "volta": {
+    "node": "24.21.0"
   }
 }

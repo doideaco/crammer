@@ -1,0 +1,57 @@
+@import "tailwindcss";
+
+/*
+  The same design language as the video itself: Swiss/minimal, one sans-serif, an 8px
+  grid, near-black on off-white with a single accent. These mirror
+  packages/video/src/theme.ts so the site and the thing it produces look related.
+*/
+@theme {
+  --color-ink: #14141a;
+  --color-ink-soft: #3d3d47;
+  --color-ink-muted: #6e6e7a;
+  --color-paper: #f6f5f1;
+  --color-paper-soft: #e8e7e1;
+  --color-line: #cfcec7;
+  --color-accent: #de3a21;
+  --color-accent-soft: #f5c7bd;
+
+  --font-sans: Inter, ui-sans-serif, system-ui, sans-serif;
+  --tracking-display: -0.03em;
+  --tracking-label: 0.14em;
+}
+
+html {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  font-family: var(--font-sans);
+}
+
+/* Small letter-spaced label, used above headings — the Kicker from the video theme. */
+.kicker {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--color-accent);
+}
+
+.rule {
+  width: 4.5rem;
+  height: 3px;
+  background: var(--color-accent);
+}
+
+/* Respect a reader who has asked for less movement. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

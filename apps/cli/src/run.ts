@@ -9,14 +9,7 @@ import {
   type Level,
   type Stage,
 } from "@crammer/schema";
-import {
-  CostTracker,
-  MockImageFetcher,
-  MockTts,
-  createProviders,
-  configuredModel,
-  MockImageSearch,
-} from "@crammer/providers";
+import { CostTracker, createProviders, configuredModel } from "@crammer/providers";
 import {
   costTable,
   runFactCheck,
@@ -215,15 +208,7 @@ function formatSeconds(seconds: number): string {
   return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, "0")}`;
 }
 
-/**
- * Mock providers for `--mock`. Useful for working on templates, the renderer or the
- * CLI itself without spending anything.
- */
+/** Mock providers for `--mock`: no network, no cost. */
 function mockProviders() {
-  return {
-    llm: testing.makeMockLlm("mock topic"),
-    tts: new MockTts(),
-    imageSearch: [new MockImageSearch()],
-    imageFetcher: new MockImageFetcher((url) => testing.makeMockJpeg(url)),
-  };
+  return testing.createMockProviders();
 }

@@ -84,6 +84,27 @@ export async function makeMockJpeg(seed: string): Promise<Buffer> {
   return sharp(Buffer.from(svg)).jpeg({ quality: 80 }).toBuffer();
 }
 
+/**
+ * A full mock provider set, matching the shape `createProviders()` returns.
+ *
+ * Used by `pnpm crammer --mock` and by the worker when `CRAMMER_MOCK=1`, so the whole
+ * M2 flow — queueing, stages, artefacts, events, storage, email — can be exercised for
+ * nothing and in seconds.
+ */
+export function createMockProviders(topic = "mock topic"): {
+  llm: MockLlm;
+  tts: MockTts;
+  imageSearch: MockImageSearch[];
+  imageFetcher: MockImageFetcher;
+} {
+  return {
+    llm: makeMockLlm(topic),
+    tts: new MockTts(),
+    imageSearch: [new MockImageSearch()],
+    imageFetcher: new MockImageFetcher((url) => makeMockJpeg(url)),
+  };
+}
+
 export type TestContextOptions = Partial<PipelineContext> & {
   topic?: string;
   llmOptions?: Parameters<typeof makeMockLlm>[1];

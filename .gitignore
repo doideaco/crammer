@@ -7,3 +7,14 @@ out/
 *.tsbuildinfo
 .DS_Store
 packages/video/.remotion/
+apps/web/.env*.local
+.claude/launch.json
+supabase/.temp/
+
+# Next.js
+.next/
+next-env.d.ts
+
+# Supabase local stack
+supabase/.temp/
+supabase/.branches/

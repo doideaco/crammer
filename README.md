@@ -10,9 +10,10 @@ the sources ship with the video.
 
 ## Status
 
-**Milestone 1 (CLI) is complete and verified end to end against live providers.**
-`pnpm crammer "<topic>"` runs all seven stages and writes `out/<slug>/video.mp4`. The
-web app (M2) and Lambda rendering (M3) are not built yet.
+**Milestones 1 and 2 are complete and verified end to end.** The CLI runs all seven
+stages and writes `out/<slug>/video.mp4`; the web app takes a prompt, signs you in with
+a magic link, runs the pipeline on a worker and plays the result back with its
+transcript and sources. Lambda rendering (M3) is not built yet.
 
 The reference run — "The Houthis and the war in Yemen" — produces a 5:29 video from 23
 sources and 55 extracted facts, with every script sentence traced to a fact and every
@@ -54,6 +55,44 @@ final.json         the fully-resolved storyboard that produced the video
 research.json …    one file per stage, for inspection and resuming
 assets/            the images and narration clips this video uses
 ```
+
+## The web app (M2)
+
+```bash
+supabase start          # Postgres, magic-link auth, Storage, and Mailpit for local mail
+pnpm db:migrate         # create the tables
+pnpm sync:env           # copy the keys into apps/web/.env.local
+pnpm web                # http://localhost:3000
+pnpm worker             # in a second terminal: claims queued videos and runs them
+```
+
+`supabase start` prints the keys; put them in `.env` and run `pnpm sync:env`. Magic-link
+emails land in Mailpit at <http://127.0.0.1:54324> — nothing leaves your machine.
+
+Developing against ten-minute, £2.70 runs is not workable, so `CRAMMER_MOCK=1 pnpm worker`
+runs the whole pipeline against mocks: a real MP4 in about two minutes, for nothing.
+
+### How it fits together
+
+| Piece | What it does |
+|---|---|
+| `apps/web` | Next.js App Router. Landing page and prompt box, magic-link sign-in, a live stage-by-stage status page, and the finished video with its transcript, sources and a "go deeper" box. |
+| `packages/db` | Drizzle schema for `users`, `videos` and `video_events`, plus every query. RLS is on, and an `auth.users` trigger keeps profiles in step. |
+| `jobs` | The stage runner, the artefact store, the mailer, a polling worker and the Trigger.dev tasks. |
+
+**Each stage is its own task**, so a flaky image search is retried without re-running the
+research before it. That means stages may run on different machines, so intermediate
+state and binary assets go through an `ArtifactStore` — Supabase Storage in production,
+the filesystem locally — rather than a shared directory.
+
+Jobs reach a worker in one of two ways. With `TRIGGER_SECRET_KEY` set, the web app
+triggers a Trigger.dev run and each stage gets its own retry policy. Without it, the row
+simply stays `queued` and the local worker claims it with `for update skip locked`, which
+is what makes several workers safe. Both paths call exactly the same stage functions.
+
+The daily limit (3 videos) is enforced inside the insert transaction under an advisory
+lock, so requests racing each other cannot all pass a check that each saw as passing.
+There is a test for that.
 
 ## The pipeline
 
@@ -131,10 +170,14 @@ templates never hard-code values.
 
 ```
 apps/cli/            the M1 CLI
+apps/web/            the M2 Next.js app
+jobs/                stage runner, artefact store, worker, Trigger.dev tasks
 packages/schema/     zod schemas + inferred types — the single source of truth
 packages/providers/  LLM, TTS and image-search clients behind interfaces, plus mocks
 packages/pipeline/   the seven stages, prompts, and outputs
 packages/video/      the Remotion project: compositions, templates, fixtures
+packages/db/         Drizzle schema, migrations and queries
+supabase/            local stack config (auth redirects, mail)
 ```
 
 `CLAUDE.md` holds the conventions in full.
@@ -152,7 +195,10 @@ The repo compiles with TypeScript 7; the root `typescript` is pinned to 6.0.3 on
 because `typescript-eslint` does not yet load against 7. See `CLAUDE.md`.
 
 Tests run entirely against mock providers, so `pnpm test` needs no keys and costs
-nothing. The mocks parse their output with the real schemas, so a fixture that would not
+nothing. The database tests are the exception: they run against a real Postgres because
+what they check — the advisory-lock rate limit, `for update skip locked` claiming — is
+database behaviour that a fake would not exercise. They skip themselves when
+`DATABASE_URL` is unset, so run them with `set -a && . ./.env && set +a && pnpm test`. The mocks parse their output with the real schemas, so a fixture that would not
 survive production fails the test suite.
 
 ## Costs
