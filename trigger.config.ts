@@ -51,6 +51,9 @@ export default defineConfig({
           "SUPABASE_URL",
           "SUPABASE_SERVICE_ROLE_KEY",
           "NEXT_PUBLIC_SITE_URL",
+          "CRAMMER_GLOBAL_VIDEO_LIMIT",
+          "CRAMMER_DAILY_VIDEO_LIMIT",
+          "CRAMMER_MAX_PENCE_PER_VIDEO",
         ]
           .map((name) => ({ name, value: process.env[name] }))
           .filter((entry): entry is { name: string; value: string } => Boolean(entry.value)),

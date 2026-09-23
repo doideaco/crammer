@@ -18,6 +18,7 @@ import {
   appendEvent,
   createDatabase,
   createImportedVideo,
+  deleteVideo,
   getUserByEmail,
   updateVideo,
 } from "@crammer/db";
@@ -63,22 +64,34 @@ const video = await createImportedVideo(db, {
 });
 
 const uploads: Record<string, string> = {};
-for (const [name, contentType] of [
-  ["video.mp4", "video/mp4"],
-  ["transcript.txt", "text/plain; charset=utf-8"],
-  ["sources.md", "text/markdown; charset=utf-8"],
-] as const) {
-  process.stdout.write(`  ${name}… `);
-  uploads[name] = await store.putOutput(
-    video.id,
-    name,
-    await readFile(join(runDir, name)),
-    contentType,
-  );
-  console.log("done");
-}
+try {
+  for (const [name, contentType] of [
+    ["video.mp4", "video/mp4"],
+    ["transcript.txt", "text/plain; charset=utf-8"],
+    ["sources.md", "text/markdown; charset=utf-8"],
+  ] as const) {
+    process.stdout.write(`  ${name}… `);
+    uploads[name] = await store.putOutput(
+      video.id,
+      name,
+      await readFile(join(runDir, name)),
+      contentType,
+    );
+    console.log("done");
+  }
 
-await store.putJson(video.id, "final", storyboard);
+  await store.putJson(video.id, "final", storyboard);
+} catch (error) {
+  // The row is created before the upload so the files have somewhere to belong. If
+  // the upload fails, remove it — otherwise a failed import leaves a video stuck at
+  // "queued" forever, which looks to everyone like a broken job rather than a
+  // mistake that has already been dealt with.
+  console.log("failed");
+  await deleteVideo(db, video.id);
+  console.error(`\nImport failed, removed the placeholder row: ${(error as Error).message}`);
+  await client.end();
+  process.exit(1);
+}
 
 await updateVideo(db, video.id, {
   status: "succeeded",

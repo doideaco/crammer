@@ -284,6 +284,11 @@ export async function claimNextQueuedVideo(db: Database): Promise<VideoRow | und
   return (rows as unknown as VideoRow[])[0];
 }
 
+/** Removes a video and, by cascade, its events. */
+export async function deleteVideo(db: Database, id: string): Promise<void> {
+  await db.delete(videos).where(eq(videos.id, id));
+}
+
 export async function appendEvent(
   db: Database,
   input: {

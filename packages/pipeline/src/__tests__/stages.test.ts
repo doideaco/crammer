@@ -11,6 +11,7 @@ import { runFactCheck, FactCheckFailedError, passes } from "../stages/factcheck.
 import { checkCoverage, runStoryboard } from "../stages/storyboard.js";
 import { runImages } from "../stages/images.js";
 import { runVoice } from "../stages/voice.js";
+import { videoBitrateFor } from "../stages/render.js";
 import { makeTestContext, mockResearch, mockScript, mockStoryboardDraft } from "../testing/index.js";
 import { sourcesMarkdown, transcriptText } from "../outputs.js";
 
@@ -594,5 +595,37 @@ describe("run outputs", () => {
     expect(markdown).toContain(research.sources[0]!.url);
     expect(markdown).toContain(storyboard.credits[0]!.attribution);
     expect(markdown).toContain("passed");
+  });
+});
+
+describe("render size ceiling", () => {
+  it("leaves room for the encoder to overshoot its target", () => {
+    const seconds = 330;
+    const bitrate = videoBitrateFor(seconds, 45 * 1024 * 1024);
+    const predicted = ((bitrate + 128_000) * seconds) / 8;
+    // Aiming at exactly the ceiling produced a file 8% over it. Aim lower.
+    expect(predicted).toBeLessThan(45 * 1024 * 1024 * 0.9);
+  });
+
+  it("still fits once a realistic overshoot is applied", () => {
+    const seconds = 337;
+    const bitrate = videoBitrateFor(seconds, 45 * 1024 * 1024);
+    const withOvershoot = (((bitrate + 128_000) * seconds) / 8) * 1.08;
+    expect(withOvershoot).toBeLessThan(45 * 1024 * 1024);
+  });
+
+  it("gives a longer video a lower bitrate to stay inside the same ceiling", () => {
+    const ceiling = 45 * 1024 * 1024;
+    expect(videoBitrateFor(600, ceiling)).toBeLessThan(videoBitrateFor(300, ceiling));
+  });
+
+  it("never drops below watchable, even for an absurdly long video", () => {
+    // Better to exceed the ceiling than to ship something nobody can watch; the
+    // caller finds out from the upload rather than from a viewer.
+    expect(videoBitrateFor(60 * 60, 45 * 1024 * 1024)).toBe(500_000);
+  });
+
+  it("does not waste bits on a very short one", () => {
+    expect(videoBitrateFor(5, 45 * 1024 * 1024)).toBe(4_000_000);
   });
 });
