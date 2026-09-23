@@ -3,7 +3,7 @@ import { STAGES, type Stage } from "@crammer/schema";
 import { getDatabase, markStatus } from "@crammer/db";
 import { createArtifactStore } from "../storage-factory.js";
 import { videoEntryPoint } from "../paths.js";
-import { TopicRefusedError, notifyReady, recordFailure, runStageForVideo } from "../run.js";
+import { isDeterministicFailure, notifyReady, recordFailure, runStageForVideo } from "../run.js";
 
 type Payload = { videoId: string };
 
@@ -38,7 +38,15 @@ function stageTask(
       return { stage, videoId: payload.videoId };
     },
     catchError: async ({ error }) => {
-      if (error instanceof TopicRefusedError) return { skipRetrying: true };
+      // Retries exist for provider hiccups. A verdict, a missing artefact, a key that
+      // is not set or an exhausted budget will fail identically next time, and each
+      // attempt re-pays for the whole stage — research alone is about GBP 1.46.
+      if (isDeterministicFailure(error)) {
+        logger.warn("Not retrying: this failure is deterministic", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return { skipRetrying: true };
+      }
       return;
     },
   });

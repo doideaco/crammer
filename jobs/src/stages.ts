@@ -11,8 +11,9 @@ import {
   FPS,
   type Stage,
 } from "@crammer/schema";
-import { RefusedError } from "@crammer/providers";
+import { ProviderConfigError, RefusedError, StructuredOutputError } from "@crammer/providers";
 import {
+  FactCheckFailedError,
   runFactCheck,
   runImages,
   runRender,
@@ -24,7 +25,7 @@ import {
   transcriptText,
 } from "@crammer/pipeline";
 import { appendEvent, getVideo, updateVideo, type Database } from "@crammer/db";
-import type { ArtifactStore } from "./artifacts.js";
+import { MissingArtifactError, type ArtifactStore } from "./artifacts.js";
 import { createStageContext } from "./context.js";
 
 const ResearchArtifact = z.object({ research: Research, assessment: TopicAssessment });
@@ -37,6 +38,44 @@ export class TopicRefusedError extends Error {
     super(message);
     this.name = "TopicRefusedError";
   }
+}
+
+/**
+ * The most a single video may spend before the run is abandoned.
+ *
+ * A clean run costs about £2.70, dominated by research. Without a ceiling, a stage that
+ * fails after its expensive call re-pays for that call on every retry — a fully failing
+ * run reaches roughly £10, and a bug that fails the same way every time does it to every
+ * video. This is the backstop for the case nobody predicted.
+ */
+export const MAX_PENCE_PER_VIDEO = Number(process.env.CRAMMER_MAX_PENCE_PER_VIDEO ?? 600);
+
+export class SpendLimitError extends Error {
+  constructor(spent: number, limit: number) {
+    super(
+      `This video has already cost ${(spent / 100).toFixed(2)} pounds, over the ${(limit / 100).toFixed(2)} limit. Stopping rather than spending more.`,
+    );
+    this.name = "SpendLimitError";
+  }
+}
+
+/**
+ * Failures that will happen again in exactly the same way.
+ *
+ * Retrying these buys nothing and costs the whole stage each time — a fact-check
+ * verdict is a decision, a missing artefact stays missing, and a key that is not set
+ * will not set itself.
+ */
+export function isDeterministicFailure(error: unknown): boolean {
+  if (error instanceof TopicRefusedError) return true;
+  if (error instanceof SpendLimitError) return true;
+  if (error instanceof FactCheckFailedError) return true;
+  if (error instanceof MissingArtifactError) return true;
+  if (error instanceof ProviderConfigError) return true;
+  // The model failed validation after the provider's own retries; the stage repeating
+  // the same prompt is unlikely to end differently and costs the same again.
+  if (error instanceof StructuredOutputError) return true;
+  return error instanceof Error && /does not exist/.test(error.message);
 }
 
 /**
@@ -56,6 +95,11 @@ export async function runStageForVideo(
 
   const video = await getVideo(db, videoId);
   if (!video) throw new Error(`Video ${videoId} does not exist.`);
+
+  // Checked before the stage rather than after, so the expensive call is never made
+  // once the budget is gone.
+  const spent = Number(video.costPence);
+  if (spent >= MAX_PENCE_PER_VIDEO) throw new SpendLimitError(spent, MAX_PENCE_PER_VIDEO);
 
   await updateVideo(db, videoId, { status: "running", stage });
 

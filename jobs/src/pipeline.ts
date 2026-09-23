@@ -1,7 +1,7 @@
 import { STAGES, type Stage } from "@crammer/schema";
 import { appendEvent, getUser, getVideo, markStatus } from "@crammer/db";
 import { createMailer, readyEmail, type Mailer } from "./email.js";
-import { TopicRefusedError, runStageForVideo, type StageDeps } from "./stages.js";
+import { SpendLimitError, TopicRefusedError, runStageForVideo, type StageDeps } from "./stages.js";
 
 export type RunDeps = StageDeps & {
   mailer?: Mailer;
@@ -43,14 +43,21 @@ export async function recordFailure(
   error: unknown,
   deps: Pick<RunDeps, "db">,
 ): Promise<void> {
+  // A refusal and an exhausted budget are both decisions rather than faults, and both
+  // are things the person who asked for the video needs told plainly.
   const refused = error instanceof TopicRefusedError;
+  const overspent = error instanceof SpendLimitError;
   const message = error instanceof Error ? error.message : String(error);
 
   await markStatus(deps.db, videoId, refused ? "refused" : "failed", { error: message });
   await appendEvent(deps.db, {
     videoId,
     level: "error",
-    message: refused ? "Topic declined" : `Failed: ${message}`,
+    message: refused
+      ? "Topic declined"
+      : overspent
+        ? `Stopped: ${message}`
+        : `Failed: ${message}`,
   });
 }
 
