@@ -1,7 +1,7 @@
 import type { ImageCandidate } from "@crammer/schema";
 import type { ImageSearchProvider } from "../types.js";
 import { ProviderConfigError } from "../errors.js";
-import { withRetry } from "../retry.js";
+import { HTTP_TIMEOUT_MS, withRetry } from "../retry.js";
 
 type PexelsResponse = {
   photos?: {
@@ -33,7 +33,10 @@ export class PexelsImages implements ImageSearchProvider {
     url.searchParams.set("orientation", "landscape");
 
     const data = await withRetry(async () => {
-      const response = await fetch(url, { headers: { Authorization: this.apiKey } });
+      const response = await fetch(url, {
+        headers: { Authorization: this.apiKey },
+        signal: AbortSignal.timeout(HTTP_TIMEOUT_MS.search),
+      });
       if (!response.ok) {
         throw Object.assign(new Error(`Pexels ${response.status}`), { status: response.status });
       }

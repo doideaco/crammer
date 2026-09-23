@@ -1,4 +1,5 @@
 import type { ImageCandidate } from "@crammer/schema";
+import { HTTP_TIMEOUT_MS } from "../retry.js";
 import type { ImageFetcher, ImageSearchProvider } from "../types.js";
 
 /**
@@ -56,13 +57,16 @@ export class MockImageFetcher implements ImageFetcher {
 /** The real fetcher: plain HTTP with a size cap so a rogue URL cannot exhaust memory. */
 export class HttpImageFetcher implements ImageFetcher {
   constructor(
-    private readonly options: { userAgent?: string; maxBytes?: number } = {},
+    private readonly options: { userAgent?: string; maxBytes?: number; timeoutMs?: number } = {},
   ) {}
 
   async fetch(url: string): Promise<{ data: Buffer; contentType: string }> {
     const response = await fetch(url, {
       headers: this.options.userAgent ? { "User-Agent": this.options.userAgent } : {},
       redirect: "follow",
+      // Images can be several megabytes, so this is generous — but finite. A stalled
+      // download used to hang the whole images stage until something else killed it.
+      signal: AbortSignal.timeout(this.options.timeoutMs ?? HTTP_TIMEOUT_MS.download),
     });
     if (!response.ok) {
       throw Object.assign(new Error(`Image fetch ${response.status} for ${url}`), {

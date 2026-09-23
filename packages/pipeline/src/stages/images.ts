@@ -18,6 +18,12 @@ import { attributionLine } from "@crammer/providers";
 import type { PipelineContext } from "../context.js";
 import { imageCheckPrompt, imageCheckSystemPrompt } from "../prompts/index.js";
 
+// sharp defaults to one thread per core and will happily use all of them at once.
+// In a container with a small memory allowance that is how a resize gets the process
+// killed rather than made faster.
+sharp.concurrency(1);
+sharp.cache(false);
+
 /** Minimum relevance score for an image to be used. */
 export const RELEVANCE_THRESHOLD = 0.62;
 /** How many candidates go to the vision check per slot. */
@@ -88,26 +94,36 @@ async function resolveSlot(
   const candidates = await gatherCandidates(slot, ctx);
   if (candidates.length === 0) return undefined;
 
-  const downloaded: { candidate: ImageCandidate; data: Buffer }[] = [];
+  /*
+    Only the small versions are kept.
+
+    Holding every full-size candidate and then resizing them all at once ran the task
+    out of memory in production: five 2400px JPEGs is ~15MB of compressed bytes, but
+    sharp decodes each to ~11MB of raw pixels, and doing five at once on a small
+    machine is enough to be killed. Downloading one at a time and keeping only the
+    thumbnail holds a few hundred kilobytes instead, at the cost of fetching the
+    winner's original again below — one extra request per slot.
+  */
+  const shortlist: { candidate: ImageCandidate; thumbnail: Buffer }[] = [];
   for (const candidate of candidates) {
+    if (shortlist.length >= CANDIDATES_PER_SLOT) break;
     try {
       const { data } = await ctx.imageFetcher.fetch(candidate.url);
       ctx.cost.add("images", { requests: 1 });
-      downloaded.push({ candidate, data });
+      const thumbnail = await sharp(data)
+        .rotate()
+        .resize({ width: VISION_WIDTH, withoutEnlargement: true })
+        .jpeg({ quality: 78 })
+        .toBuffer();
+      shortlist.push({ candidate, thumbnail });
     } catch (error) {
       ctx.log.warn(`  could not fetch ${candidate.url}: ${(error as Error).message}`);
     }
-    if (downloaded.length >= CANDIDATES_PER_SLOT) break;
   }
-  if (downloaded.length === 0) return undefined;
+  if (shortlist.length === 0) return undefined;
 
-  // Send small versions for judging; the originals are only processed once a winner
-  // is picked.
-  const thumbnails = await Promise.all(
-    downloaded.map(async ({ data }) =>
-      sharp(data).rotate().resize({ width: VISION_WIDTH, withoutEnlargement: true }).jpeg({ quality: 78 }).toBuffer(),
-    ),
-  );
+  const downloaded = shortlist;
+  const thumbnails = shortlist.map((entry) => entry.thumbnail);
 
   const verdicts = await ctx.llm.vision({
     system: imageCheckSystemPrompt(),
@@ -146,7 +162,10 @@ async function resolveSlot(
   const winner = downloaded[best.index]!;
   ctx.log.info(`  chose "${winner.candidate.title}" (relevance ${best.relevance.toFixed(2)}).`);
 
-  return processImage(winner.candidate, winner.data, imagesDir, ctx);
+  // Fetched again rather than held: see the note above about memory.
+  const { data } = await ctx.imageFetcher.fetch(winner.candidate.url);
+  ctx.cost.add("images", { requests: 1 });
+  return processImage(winner.candidate, data, imagesDir, ctx);
 }
 
 /** Runs the slot's queries against each provider in turn until there are enough hits. */

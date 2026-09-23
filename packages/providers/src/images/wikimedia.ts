@@ -1,7 +1,7 @@
 import type { ImageCandidate } from "@crammer/schema";
 import type { ImageSearchProvider } from "../types.js";
 import { ProviderConfigError } from "../errors.js";
-import { withRetry } from "../retry.js";
+import { HTTP_TIMEOUT_MS, withRetry } from "../retry.js";
 import { attributionLine, normaliseLicence, stripHtml } from "./licence.js";
 
 const ENDPOINT = "https://commons.wikimedia.org/w/api.php";
@@ -61,7 +61,10 @@ export class WikimediaImages implements ImageSearchProvider {
       url.searchParams.set(key, value);
     }
     return withRetry(async () => {
-      const response = await fetch(url, { headers: { "User-Agent": this.userAgent } });
+      const response = await fetch(url, {
+        headers: { "User-Agent": this.userAgent },
+        signal: AbortSignal.timeout(HTTP_TIMEOUT_MS.search),
+      });
       if (!response.ok) {
         throw Object.assign(new Error(`Wikimedia ${response.status}`), {
           status: response.status,

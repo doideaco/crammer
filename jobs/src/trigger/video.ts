@@ -7,6 +7,9 @@ import { isDeterministicFailure, notifyReady, recordFailure, runStageForVideo } 
 
 type Payload = { videoId: string };
 
+/** Trigger.dev machine presets, smallest first. */
+type MachineSize = "small-1x" | "small-2x" | "medium-1x" | "medium-2x" | "large-1x";
+
 function deps() {
   return { db: getDatabase(), store: createArtifactStore(), videoEntryPoint: videoEntryPoint() };
 }
@@ -22,11 +25,14 @@ function deps() {
 function stageTask(
   id: string,
   stage: Stage,
-  options: { maxDuration: number; retries: number },
+  options: { maxDuration: number; retries: number; machine?: MachineSize },
 ) {
   return task({
     id,
     maxDuration: options.maxDuration,
+    // Most stages are waiting on an API and need nothing; the two that handle pixels
+    // need real memory. The images stage was OOM-killed in production on the default.
+    ...(options.machine ? { machine: options.machine } : {}),
     retry: {
       maxAttempts: options.retries + 1,
       factor: 2,
@@ -69,9 +75,20 @@ export const storyboardTask = stageTask("video.storyboard", "storyboard", {
   maxDuration: 600,
   retries: 3,
 });
-export const imagesTask = stageTask("video.images", "images", { maxDuration: 900, retries: 2 });
+// Decoding several photographs and cropping them to 1080p.
+export const imagesTask = stageTask("video.images", "images", {
+  maxDuration: 900,
+  retries: 2,
+  machine: "small-2x",
+});
 export const voiceTask = stageTask("video.voice", "voice", { maxDuration: 900, retries: 2 });
-export const renderTask = stageTask("video.render", "render", { maxDuration: 3600, retries: 1 });
+// Bundling the Remotion project, driving a headless browser over thousands of frames,
+// then stitching. The heaviest thing this system does by a wide margin.
+export const renderTask = stageTask("video.render", "render", {
+  maxDuration: 3600,
+  retries: 1,
+  machine: "medium-2x",
+});
 
 /** Lookup for the orchestrator, built from the exported tasks rather than beside them. */
 const STAGE_TASKS = {

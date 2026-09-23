@@ -1,7 +1,7 @@
 import type { ImageCandidate } from "@crammer/schema";
 import type { ImageSearchProvider } from "../types.js";
 import { ProviderConfigError } from "../errors.js";
-import { withRetry } from "../retry.js";
+import { HTTP_TIMEOUT_MS, withRetry } from "../retry.js";
 
 type UnsplashResponse = {
   results?: {
@@ -46,6 +46,7 @@ export class UnsplashImages implements ImageSearchProvider {
           Authorization: `Client-ID ${this.accessKey}`,
           "Accept-Version": "v1",
         },
+        signal: AbortSignal.timeout(HTTP_TIMEOUT_MS.search),
       });
       if (!response.ok) {
         throw Object.assign(new Error(`Unsplash ${response.status}`), { status: response.status });
