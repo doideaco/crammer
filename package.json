@@ -13,6 +13,7 @@
     "db:generate": "pnpm --filter @crammer/db generate",
     "db:migrate": "pnpm --filter @crammer/db migrate",
     "format": "prettier --write .",
+    "import:run": "pnpm --filter @crammer/jobs exec tsx src/import-run.ts",
     "lint": "eslint .",
     "studio": "pnpm --filter @crammer/video run studio",
     "sync:env": "tsx scripts/sync-env.ts",

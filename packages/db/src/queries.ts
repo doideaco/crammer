@@ -37,6 +37,12 @@ export async function getUser(db: Database, id: string): Promise<UserRow | undef
   return row;
 }
 
+/** One user, by email. Used by tools that take an address rather than an id. */
+export async function getUserByEmail(db: Database, email: string): Promise<UserRow | undefined> {
+  const [row] = await db.select().from(users).where(eq(users.email, email)).limit(1);
+  return row;
+}
+
 /** Videos this user started in the last 24 hours. */
 export async function countVideosToday(db: Database, userId: string): Promise<number> {
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
