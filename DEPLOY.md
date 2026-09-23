@@ -47,8 +47,12 @@ vercel login
 vercel link                # from the repo root
 ```
 
-Set the root directory to `apps/web` in the project settings, then add environment
-variables (Production and Preview):
+**Set the Root Directory to `apps/web`** in Project Settings. This is the one setting
+that cannot live in the repo, and without it the build fails with "No Next.js version
+detected" — Vercel looks for `next` in the root `package.json`, which in a monorepo does
+not have it. Everything else is in `apps/web/vercel.json`.
+
+Then add environment variables (Production and Preview):
 
 ```
 DATABASE_URL                      your Supabase pooler connection string

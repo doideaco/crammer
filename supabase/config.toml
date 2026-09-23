@@ -156,11 +156,16 @@ site_url = "env(NEXT_PUBLIC_SITE_URL)"
 # The magic link redirects here. Supabase rejects any redirect_to not on this list
 # and silently falls back to site_url, which lands the user on the landing page with
 # no session.
+# Both local and deployed URLs, so one config serves both environments.
 additional_redirect_urls = [
   "http://localhost:3000/auth/callback",
   "http://127.0.0.1:3000/auth/callback",
   "http://localhost:3000",
   "http://127.0.0.1:3000",
+  "https://crammer-alex-morris-projects.vercel.app/auth/callback",
+  "https://crammer-alex-morris-projects.vercel.app",
+  # Preview deployments get their own subdomain each time.
+  "https://*-alex-morris-projects.vercel.app/auth/callback",
 ]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
 jwt_expiry = 3600
