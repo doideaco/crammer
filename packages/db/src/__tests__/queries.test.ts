@@ -2,7 +2,12 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDatabase, type Database } from "../client.js";
 import {
-  DAILY_VIDEO_LIMIT,
+  GlobalLimitError,
+  dailyVideoLimit,
+  globalVideoLimit,
+  countVideosInWindow,
+  createImportedVideo,
+  remainingGlobalVideos,
   RateLimitError,
   appendEvent,
   claimNextQueuedVideo,
@@ -65,11 +70,13 @@ suite("queries (live database)", () => {
   });
 
   it("enforces the daily limit server-side", async () => {
+    // Isolate the per-user limit from the global one, which is lower by default.
+    process.env.CRAMMER_GLOBAL_VIDEO_LIMIT = "1000";
     const used = await countVideosToday(db, userId);
-    for (let i = used; i < DAILY_VIDEO_LIMIT; i++) {
+    for (let i = used; i < dailyVideoLimit(); i++) {
       await createVideo(db, { userId, topic: `Filler topic number ${i}`, level: "beginner" });
     }
-    expect(await countVideosToday(db, userId)).toBe(DAILY_VIDEO_LIMIT);
+    expect(await countVideosToday(db, userId)).toBe(dailyVideoLimit());
 
     await expect(
       createVideo(db, { userId, topic: "One over the limit", level: "beginner" }),
@@ -77,20 +84,64 @@ suite("queries (live database)", () => {
   });
 
   it("holds the limit when requests race", async () => {
+    process.env.CRAMMER_GLOBAL_VIDEO_LIMIT = "1000";
     const racer = randomUUID();
     await ensureUser(db, { id: racer, email: `race-${racer}@example.com` });
 
     // Fire more than the limit at once: without the advisory lock, several would each
     // read a count below the limit and all insert.
     const attempts = await Promise.allSettled(
-      Array.from({ length: DAILY_VIDEO_LIMIT + 4 }, (_, i) =>
+      Array.from({ length: dailyVideoLimit() + 4 }, (_, i) =>
         createVideo(db, { userId: racer, topic: `Racing topic number ${i}`, level: "beginner" }),
       ),
     );
 
-    expect(attempts.filter((a) => a.status === "fulfilled")).toHaveLength(DAILY_VIDEO_LIMIT);
-    expect(await countVideosToday(db, racer)).toBe(DAILY_VIDEO_LIMIT);
+    expect(attempts.filter((a) => a.status === "fulfilled")).toHaveLength(dailyVideoLimit());
+    expect(await countVideosToday(db, racer)).toBe(dailyVideoLimit());
     await db.execute(`delete from users where id = '${racer}'` as never);
+  });
+
+  it("does not count imported videos against the spend caps", async () => {
+    process.env.CRAMMER_GLOBAL_VIDEO_LIMIT = "1000";
+    const before = await countVideosInWindow(db);
+    await createImportedVideo(db, {
+      userId,
+      topic: "An existing run added from the CLI",
+      level: "beginner",
+    });
+    // The video exists, but the budget it exists to protect is untouched.
+    expect(await countVideosInWindow(db)).toBe(before);
+    expect(await remainingGlobalVideos(db)).toBe(Math.max(0, globalVideoLimit() - before));
+  });
+
+  it("caps the whole instance, not just one user", async () => {
+    process.env.CRAMMER_GLOBAL_VIDEO_LIMIT = "3";
+    // Clear the decks: this asserts on a global count, so it owns the table.
+    await db.execute("delete from videos where imported = false" as never);
+
+    const people = await Promise.all(
+      [0, 1, 2, 3].map(async (i) => {
+        const id = randomUUID();
+        await ensureUser(db, { id, email: `crowd-${i}-${id}@example.com` });
+        return id;
+      }),
+    );
+
+    // One video each, from different users, so no per-user limit is in play.
+    const results = await Promise.allSettled(
+      people.map((id, i) =>
+        createVideo(db, { userId: id, topic: `A topic from person ${i}`, level: "beginner" }),
+      ),
+    );
+
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(globalVideoLimit());
+    const rejected = results.find((r) => r.status === "rejected");
+    expect((rejected as PromiseRejectedResult | undefined)?.reason).toBeInstanceOf(
+      GlobalLimitError,
+    );
+    expect(await remainingGlobalVideos(db)).toBe(0);
+
+    for (const id of people) await db.execute(`delete from users where id = '${id}'` as never);
   });
 
   it("claims one queued video per worker", async () => {

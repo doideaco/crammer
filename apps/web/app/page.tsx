@@ -1,3 +1,4 @@
+import { getDatabase, globalVideoLimit, remainingGlobalVideos } from "@crammer/db";
 import { currentUser } from "@/lib/auth";
 import { PromptBox } from "@/components/PromptBox";
 
@@ -16,6 +17,8 @@ export default async function HomePage({
 }) {
   const user = await currentUser();
   const { error } = await searchParams;
+  const remaining = await remainingGlobalVideos(getDatabase());
+  const limit = globalVideoLimit();
 
   return (
     <div className="flex flex-col gap-16">
@@ -37,8 +40,24 @@ export default async function HomePage({
         ) : null}
 
         <div className="max-w-2xl rounded-sm border border-line bg-paper-soft/50 p-6">
-          <PromptBox signedIn={Boolean(user)} />
+          {remaining > 0 ? (
+            <PromptBox signedIn={Boolean(user)} />
+          ) : (
+            <div className="flex flex-col gap-2">
+              <span className="kicker">Demo limit reached</span>
+              <p className="text-ink-soft">
+                This instance is capped at {limit} generated videos so a public demo
+                cannot run up a bill. The finished ones are still there to watch.
+              </p>
+            </div>
+          )}
         </div>
+        {remaining > 0 ? (
+          <p className="max-w-2xl text-xs text-ink-muted">
+            Demo instance: {remaining} of {limit} generations left. Each one costs
+            about £2.70 and takes around ten minutes.
+          </p>
+        ) : null}
       </section>
 
       <section className="flex flex-col gap-6">

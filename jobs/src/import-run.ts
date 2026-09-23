@@ -8,8 +8,7 @@
  * Usage:
  *   pnpm import:run out/<slug> you@example.com
  *
- * Goes through `createVideo`, so the daily limit applies here too — importing is not a
- * way around it.
+ * Imported videos are excluded from the spend caps, since they cost nothing to add.
  */
 import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
@@ -18,7 +17,7 @@ import { FPS, Storyboard, storyboardDuration } from "@crammer/schema";
 import {
   appendEvent,
   createDatabase,
-  createVideo,
+  createImportedVideo,
   getUserByEmail,
   updateVideo,
 } from "@crammer/db";
@@ -55,9 +54,9 @@ const userId = user.id;
 
 console.log(`Importing "${storyboard.title}" for ${email}…`);
 
-// Goes through createVideo so the daily limit applies here too — importing should not
-// be a way around it.
-const video = await createVideo(db, {
+// Marked as imported, so it does not consume the spend caps: this video was produced
+// elsewhere and costs nothing to record.
+const video = await createImportedVideo(db, {
   userId,
   topic: storyboard.topic,
   level: storyboard.level,

@@ -12,8 +12,38 @@ import {
   type VideoStatus,
 } from "./schema.js";
 
-/** Videos one user may start per rolling 24 hours. */
-export const DAILY_VIDEO_LIMIT = 3;
+/**
+ * Limits are read when they are used, not when this module loads.
+ *
+ * Module-load reads mean a deployment has to be rebuilt to change a cap, and they are
+ * untestable without re-importing the module.
+ */
+export function dailyVideoLimit(): number {
+  return Number(process.env.CRAMMER_DAILY_VIDEO_LIMIT ?? 3);
+}
+
+/**
+ * Videos anyone at all may start in the window below.
+ *
+ * The per-user limit bounds one person; this bounds the bill. A public demo that
+ * several people find at once would otherwise cost about GBP 2.70 a go with nothing
+ * to stop it. Set the window very large to make this a hard total rather than a rate.
+ */
+export function globalVideoLimit(): number {
+  return Number(process.env.CRAMMER_GLOBAL_VIDEO_LIMIT ?? 3);
+}
+
+/**
+ * Window the global limit applies over. The default is effectively forever, making it
+ * a hard total rather than a rate — which is what a demo wants. Set it to 24 to get a
+ * self-resetting daily cap instead.
+ */
+export function globalWindowHours(): number {
+  return Number(process.env.CRAMMER_GLOBAL_VIDEO_WINDOW_HOURS ?? 24 * 365 * 100);
+}
+
+/** Advisory lock key for the global check. Any constant, as long as it is the same one. */
+const GLOBAL_LOCK_KEY = 20260923;
 
 /**
  * Creates or refreshes the profile row for a signed-in user.
@@ -60,19 +90,66 @@ export class RateLimitError extends Error {
   }
 }
 
+/** Raised when the whole instance is at its cap, not just this user. */
+export class GlobalLimitError extends Error {
+  constructor(
+    readonly limit: number,
+    readonly windowHours: number,
+  ) {
+    super(
+      windowHours >= 24 * 365
+        ? `This demo is capped at ${limit} videos in total and has reached it.`
+        : `This demo is capped at ${limit} videos every ${windowHours} hours and has reached it. Try again later.`,
+    );
+    this.name = "GlobalLimitError";
+  }
+}
+
 /**
- * Starts a video, enforcing the daily limit.
+ * Videos the pipeline has generated across the whole instance, inside the global window.
  *
- * The limit is checked and the row inserted in one transaction, so two requests racing
- * cannot both slip past a check that each saw as passing.
+ * Imported videos are excluded: they were made elsewhere and cost nothing to add, so
+ * letting them consume a budget that exists to bound spend would be wrong.
+ */
+export async function countVideosInWindow(db: Database): Promise<number> {
+  const since = new Date(Date.now() - globalWindowHours() * 60 * 60 * 1000);
+  const [row] = await db
+    .select({ n: count() })
+    .from(videos)
+    .where(and(gte(videos.createdAt, since), eq(videos.imported, false)));
+  return row?.n ?? 0;
+}
+
+/** How many more the pipeline may generate before the instance is capped. */
+export async function remainingGlobalVideos(db: Database): Promise<number> {
+  return Math.max(0, globalVideoLimit() - (await countVideosInWindow(db)));
+}
+
+/**
+ * Starts a video, enforcing both the per-user and the whole-instance limits.
+ *
+ * Checks and insert happen in one transaction under advisory locks, so requests racing
+ * each other cannot all slip past a check that each saw as passing.
  */
 export async function createVideo(
   db: Database,
   input: { userId: string; topic: string; level: Level; parentVideoId?: string },
 ): Promise<VideoRow> {
   return db.transaction(async (tx) => {
-    // Lock this user's rows for the duration, so the count cannot change underneath us.
+    // Global lock first, then the per-user one — always in that order, or two
+    // transactions taking them the other way round would deadlock.
+    await tx.execute(sql`select pg_advisory_xact_lock(${GLOBAL_LOCK_KEY})`);
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${input.userId}))`);
+
+    const globalSince = new Date(Date.now() - globalWindowHours() * 60 * 60 * 1000);
+    const [global] = await tx
+      .select({ n: count() })
+      .from(videos)
+      .where(and(gte(videos.createdAt, globalSince), eq(videos.imported, false)));
+
+    if ((global?.n ?? 0) >= globalVideoLimit()) {
+      throw new GlobalLimitError(globalVideoLimit(), globalWindowHours());
+    }
 
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const [existing] = await tx
@@ -80,7 +157,7 @@ export async function createVideo(
       .from(videos)
       .where(and(eq(videos.userId, input.userId), gte(videos.createdAt, since)));
 
-    if ((existing?.n ?? 0) >= DAILY_VIDEO_LIMIT) throw new RateLimitError(DAILY_VIDEO_LIMIT);
+    if ((existing?.n ?? 0) >= dailyVideoLimit()) throw new RateLimitError(dailyVideoLimit());
 
     const values: NewVideoRow = {
       userId: input.userId,
@@ -105,6 +182,24 @@ export async function getVideoForUser(
     .from(videos)
     .where(and(eq(videos.id, input.id), eq(videos.userId, input.userId)))
     .limit(1);
+  return row;
+}
+
+/**
+ * Adds an already-finished video to a library, bypassing both limits.
+ *
+ * `pnpm import:run` uses this. The video was produced elsewhere and costs nothing to
+ * record, so it neither consumes the demo budget nor counts against a daily allowance.
+ */
+export async function createImportedVideo(
+  db: Database,
+  input: { userId: string; topic: string; level: Level },
+): Promise<VideoRow> {
+  const [row] = await db
+    .insert(videos)
+    .values({ ...input, status: "queued", imported: true })
+    .returning();
+  if (!row) throw new Error("Failed to create the imported video row.");
   return row;
 }
 

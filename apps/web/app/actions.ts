@@ -3,7 +3,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { createVideo, getDatabase, RateLimitError } from "@crammer/db";
+import { createVideo, getDatabase, GlobalLimitError, RateLimitError } from "@crammer/db";
 import { createJobQueue } from "@crammer/jobs";
 import { createClient } from "@/lib/supabase/server";
 import { currentUser } from "@/lib/auth";
@@ -61,7 +61,9 @@ export async function createVideoAction(
     const video = await createVideo(getDatabase(), { userId: user.id, ...parsed.data });
     videoId = video.id;
   } catch (error) {
-    if (error instanceof RateLimitError) return { error: error.message };
+    if (error instanceof RateLimitError || error instanceof GlobalLimitError) {
+      return { error: error.message };
+    }
     throw error;
   }
 

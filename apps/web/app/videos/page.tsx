@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getDatabase, listVideosForUser, countVideosToday, DAILY_VIDEO_LIMIT } from "@crammer/db";
+import { countVideosToday, dailyVideoLimit, getDatabase, listVideosForUser } from "@crammer/db";
 import { requireUser } from "@/lib/auth";
 import { formatDuration, formatWhen } from "@/lib/format";
 
@@ -27,7 +27,7 @@ export default async function VideosPage() {
           <div className="mt-2 rule" />
         </div>
         <p className="text-sm text-ink-muted">
-          {usedToday} of {DAILY_VIDEO_LIMIT} today
+          {usedToday} of {dailyVideoLimit()} today
         </p>
       </div>
 

@@ -1,0 +1,1 @@
+ALTER TABLE "videos" ADD COLUMN "imported" boolean DEFAULT false NOT NULL;

@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  boolean,
   index,
   integer,
   jsonb,
@@ -68,6 +69,11 @@ export const videos = pgTable(
     error: text("error"),
     /** The video this one was asked as a follow-up to, if any. */
     parentVideoId: uuid("parent_video_id"),
+    /**
+     * Added from an existing run rather than generated here. Excluded from the spend
+     * caps, because it cost nothing to record.
+     */
+    imported: boolean("imported").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     completedAt: timestamp("completed_at", { withTimezone: true }),
