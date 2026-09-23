@@ -25,7 +25,7 @@ export function outputRoot(override?: string): string {
   return override ? resolve(override) : join(workspaceRoot(), "out");
 }
 
-/** Processed images shared across runs, keyed by content hash. */
-export function imageCacheDir(): string {
-  return join(outputRoot(), ".cache", "images");
+/** Cache root for processed images and narration clips, shared across runs. */
+export function cacheRoot(override?: string): string {
+  return join(outputRoot(override), ".cache");
 }

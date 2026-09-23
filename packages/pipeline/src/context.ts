@@ -30,8 +30,12 @@ export type PipelineContext = {
    */
   assetDir: string;
   /**
-   * Optional directory for processed images, shared across runs and keyed by content
-   * hash. Re-running the same topic then costs no downloads.
+   * Optional cache root, shared across runs, holding `images/` and `audio/` keyed by
+   * content hash. Re-running a topic then costs no downloads and no TTS.
+   *
+   * Deliberately outside `assetDir`: that directory is Remotion's `publicDir` and is
+   * copied wholesale into every bundle, so a cache living inside it would grow the
+   * bundle without bound.
    */
   cacheDir?: string;
 };

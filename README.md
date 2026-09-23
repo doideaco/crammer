@@ -19,9 +19,10 @@ sources and 55 extracted facts, with every script sentence traced to a fact and 
 image carrying its licence through to the end card.
 
 **Image coverage depends on having all three search providers configured.** With only
-Wikimedia Commons, generic scenes ("a container ship at sea") often find nothing usable
-and the scene falls back to a typographic card. Unsplash and Pexels keys are free and
-close most of that gap.
+Wikimedia Commons, generic scenes ("a container ship at sea") find nothing usable and
+fall back to a typographic card; adding Unsplash and Pexels closes most of that gap.
+What stays hard is specific places with little free-licensed photography — the city of
+Saada, say — and those correctly fall back rather than showing a near-miss.
 
 ## Quick start
 
@@ -49,9 +50,9 @@ Output lands in `out/<slug>/`:
 video.mp4          the finished 1920x1080 explainer
 transcript.txt     the narration as plain text
 sources.md         references, image credits and the fact-check report
-storyboard.json    the JSON that produced the video
+final.json         the fully-resolved storyboard that produced the video
 research.json …    one file per stage, for inspection and resuming
-assets/            downloaded images and per-scene narration audio
+assets/            the images and narration clips this video uses
 ```
 
 ## The pipeline
@@ -78,6 +79,17 @@ pnpm crammer "topic" --from storyboard       # resume from saved output
 
 `--from images` and later need only `storyboard.json`; earlier artefacts are not read.
 Editing `storyboard.json` by hand and re-running `--from images` is a supported workflow.
+
+**Stage artefacts are immutable.** `<stage>.json` is always what that stage produced, so
+re-running from one gives the same result every time. The finished storyboard ships as
+`final.json` rather than overwriting `storyboard.json` — otherwise an image fallback
+would be baked in and a later `--from images` would never retry that slot.
+
+Processed images and narration clips are cached under `out/.cache/`, keyed by content
+hash — images by their bytes, audio by `(narration, voice)`. Re-running `--from images`
+after tweaking a storyboard therefore costs nothing in TTS, and only the scenes whose
+words actually changed are re-synthesised. The cache lives outside the run's `assets/`
+directory because that is Remotion's `publicDir` and is copied into every bundle.
 
 ### Other flags
 
@@ -159,7 +171,7 @@ September 2026) came to roughly **£2.70** and about 13 minutes wall-clock:
 | factcheck | £0.23 | Three calls: check, revise, re-check. |
 | storyboard | £0.13 | One call. |
 | images | £0.09 | Wikimedia search plus a vision check per slot. |
-| voice | £0.50 | 4,257 TTS characters across 17 scenes. |
+| voice | £0.50 | 4,257 TTS characters across 17 scenes — £0.00 on any re-run, from cache. |
 | render | £0.00 | Local. ~3.5 minutes for 5:29 at 1080p. |
 
 Research is the obvious thing to attack first if this needs to be cheaper — capping

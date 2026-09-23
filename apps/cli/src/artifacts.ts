@@ -55,6 +55,17 @@ export class RunDirectory {
     return parsed.data;
   }
 
+  /**
+   * The fully-resolved storyboard that produced the video.
+   *
+   * Kept separate from `storyboard.json` so the stage artefacts stay immutable: a
+   * stage's file is what that stage produced, and re-running from it gives the same
+   * result every time.
+   */
+  async writeFinal(storyboard: unknown): Promise<void> {
+    await writeFile(this.pathFor("final.json"), `${JSON.stringify(storyboard, null, 2)}\n`);
+  }
+
   async writeText(name: string, contents: string): Promise<void> {
     await writeFile(this.pathFor(name), contents);
   }

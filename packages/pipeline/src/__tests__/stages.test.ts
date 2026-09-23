@@ -3,8 +3,8 @@ import { readdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { FPS, scriptSentences, scriptWordCount, type Storyboard } from "@crammer/schema";
-import { MockImageSearch, MockLlm, RefusedError } from "@crammer/providers";
+import { FPS, Storyboard, scriptSentences, scriptWordCount } from "@crammer/schema";
+import { MockImageSearch, MockLlm, MockTts, RefusedError } from "@crammer/providers";
 import { runResearch } from "../stages/research.js";
 import { runScript } from "../stages/script.js";
 import { runFactCheck, FactCheckFailedError, passes } from "../stages/factcheck.js";
@@ -469,10 +469,10 @@ describe("stage 6: voice", () => {
     expect(spoken.every((s) => s.audio && s.durationInFrames)).toBe(true);
     expect(spoken.every((s) => s.audio!.path.startsWith("audio/"))).toBe(true);
 
-    const files = await readdir(join(assetDir, "audio"));
-    expect(files.length).toBe(spoken.length);
+    const clips = await readdir(join(assetDir, "audio"));
+    expect(clips).toHaveLength(spoken.length);
 
-    const wav = await readFile(join(assetDir, "audio", files[0]!));
+    const wav = await readFile(join(assetDir, "audio", clips[0]!));
     expect(wav.subarray(0, 4).toString("ascii")).toBe("RIFF");
   });
 
@@ -484,6 +484,85 @@ describe("stage 6: voice", () => {
     const endCard = result.scenes.at(-1)!;
     expect(endCard.audio).toBeUndefined();
     expect(endCard.durationInFrames).toBe(7 * FPS);
+  });
+
+  it("reuses cached clips when only the images changed", async () => {
+    const storyboard = await storyboardFor();
+    const cacheDir = tempDir();
+
+    const first = makeTestContext({ topic: TOPIC, assetDir: tempDir(), cacheDir });
+    await runVoice(storyboard, first);
+    expect(first.cost.usageFor("voice").ttsCharacters).toBeGreaterThan(0);
+
+    // A fresh run directory, same cache: nothing should be re-synthesised.
+    const second = makeTestContext({ topic: TOPIC, assetDir: tempDir(), cacheDir });
+    const result = await runVoice(storyboard, second);
+    expect(second.cost.usageFor("voice").ttsCharacters).toBe(0);
+    expect(result.scenes.filter((s) => s.audio).length).toBeGreaterThan(0);
+  });
+
+  it("keeps the cache out of the directory Remotion bundles", async () => {
+    const storyboard = await storyboardFor();
+    const assetDir = tempDir();
+    const cacheDir = tempDir();
+
+    await runVoice(storyboard, makeTestContext({ topic: TOPIC, assetDir, cacheDir }));
+
+    // Edit one scene, leaving the rest alone.
+    const edited = Storyboard.parse({
+      ...storyboard,
+      scenes: storyboard.scenes.map((s, i) =>
+        i === 1 ? { ...s, narration: "Different words entirely now." } : s,
+      ),
+    });
+    await runVoice(edited, makeTestContext({ topic: TOPIC, assetDir, cacheDir }));
+
+    const spoken = edited.scenes.filter((s) => s.narration.trim().length > 0).length;
+    const assets = await readdir(join(assetDir, "audio"));
+    // The asset directory holds exactly this storyboard's clips: the superseded one is
+    // gone, and no sidecars are shipped.
+    expect(assets).toHaveLength(spoken);
+    expect(assets.every((f) => f.endsWith(".wav"))).toBe(true);
+
+    // The cache still has the superseded clip, so changing the sentence back is free.
+    const cached = await readdir(join(cacheDir, "audio"));
+    expect(cached.filter((f) => f.endsWith(".wav"))).toHaveLength(spoken + 1);
+  });
+
+  it("re-synthesises when the voice changes", async () => {
+    const storyboard = await storyboardFor();
+    const cacheDir = tempDir();
+
+    await runVoice(storyboard, makeTestContext({ topic: TOPIC, assetDir: tempDir(), cacheDir }));
+
+    // A different speaking rate is a different voice, so the cache must miss.
+    const second = makeTestContext({
+      topic: TOPIC,
+      assetDir: tempDir(),
+      cacheDir,
+      tts: new MockTts({ wordsPerMinute: 200 }),
+    });
+    await runVoice(storyboard, second);
+    expect(second.cost.usageFor("voice").ttsCharacters).toBeGreaterThan(0);
+  });
+
+  it("re-synthesises a scene whose narration was edited", async () => {
+    const storyboard = await storyboardFor();
+    const cacheDir = tempDir();
+    await runVoice(storyboard, makeTestContext({ topic: TOPIC, assetDir: tempDir(), cacheDir }));
+
+    const edited = Storyboard.parse({
+      ...storyboard,
+      scenes: storyboard.scenes.map((s, i) =>
+        i === 1 ? { ...s, narration: "A completely different sentence now." } : s,
+      ),
+    });
+
+    const second = makeTestContext({ topic: TOPIC, assetDir: tempDir(), cacheDir });
+    await runVoice(edited, second);
+    expect(second.cost.usageFor("voice").ttsCharacters).toBe(
+      "A completely different sentence now.".length,
+    );
   });
 
   it("bills TTS characters", async () => {

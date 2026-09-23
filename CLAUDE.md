@@ -41,6 +41,12 @@ out/               CLI output (gitignored)
 - **Providers are interfaces.** `packages/providers` exports an interface plus a real and
   a mock implementation for each of LLM, TTS and image search. Pipeline stages depend on
   the interface only, so tests run with mocks and no network.
+- **Stage artefacts are immutable.** `out/<slug>/<stage>.json` is what that stage
+  produced and nothing later may overwrite it — that is what makes `--from` repeatable.
+  The finished storyboard ships as `final.json`.
+- **The cache lives outside `assetDir`.** `out/.cache/{images,audio}` is keyed by
+  content hash. `assetDir` is Remotion's `publicDir` and is copied into every bundle, so
+  it must hold only what the current storyboard references.
 - **Asset paths are relative.** `ImageAsset.localPath` and `SceneAudio.path` are relative
   to the run's asset root (Remotion `publicDir`), e.g. `images/ab12.jpg`. Templates use
   `staticFile()`. Never put an absolute path in a storyboard.

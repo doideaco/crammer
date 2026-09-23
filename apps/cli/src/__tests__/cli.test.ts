@@ -132,6 +132,34 @@ describe("run (mock providers)", () => {
     expect(storyboard.scenes.some((s) => s.audio)).toBe(true);
   });
 
+  it("never overwrites a stage artefact with a later stage's result", async () => {
+    // Regression: the render stage used to write the final storyboard back over
+    // storyboard.json, baking in image fallbacks. A later --from images would then see
+    // TitleCards where photo scenes had been, and never retry those slots.
+    const out = temp();
+    const base = {
+      topic: TOPIC,
+      level: "beginner" as const,
+      captions: true,
+      mock: true,
+      quiet: true,
+      out,
+    };
+
+    const first = await run({ ...base, from: "research", stopAfter: "storyboard" });
+    const stageFour = await readFile(join(first.dir, "storyboard.json"), "utf8");
+
+    await run({ ...base, from: "images", stopAfter: "voice" });
+
+    expect(await readFile(join(first.dir, "storyboard.json"), "utf8")).toBe(stageFour);
+
+    // The images stage's own artefact is where its result lands.
+    const afterImages = await new RunDirectory(first.dir).read("images", Storyboard);
+    expect(afterImages.scenes).toHaveLength(
+      Storyboard.parse(JSON.parse(stageFour)).scenes.length,
+    );
+  });
+
   it("writes a transcript and sources alongside the storyboard", async () => {
     const out = temp();
     const { dir } = await run({

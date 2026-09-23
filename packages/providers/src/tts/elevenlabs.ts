@@ -21,6 +21,7 @@ export type ElevenLabsTtsOptions = {
  */
 export class ElevenLabsTts implements TtsProvider {
   readonly name = "elevenlabs";
+  readonly voiceKey: string;
   private readonly client: ElevenLabsClient;
   private readonly voiceId: string;
   private readonly modelId: string;
@@ -37,6 +38,7 @@ export class ElevenLabsTts implements TtsProvider {
     this.voiceId = voiceId;
     this.modelId = options.modelId ?? "eleven_multilingual_v2";
     this.outputFormat = options.outputFormat ?? "mp3_44100_128";
+    this.voiceKey = `elevenlabs:${this.voiceId}:${this.modelId}:${this.outputFormat}`;
   }
 
   async synthesize(req: TtsRequest): Promise<TtsResult> {

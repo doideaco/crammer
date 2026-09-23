@@ -197,7 +197,8 @@ async function processImage(
   const localPath = `images/${contentHash}.jpg`;
   const file = join(imagesDir, `${contentHash}.jpg`);
 
-  const cached = ctx.cacheDir ? join(ctx.cacheDir, `${contentHash}.jpg`) : undefined;
+  const cacheDir = ctx.cacheDir ? join(ctx.cacheDir, "images") : undefined;
+  const cached = cacheDir ? join(cacheDir, `${contentHash}.jpg`) : undefined;
 
   let processed: Buffer;
   if (cached && existsSync(cached)) {
@@ -209,7 +210,7 @@ async function processImage(
       .jpeg({ quality: 88, mozjpeg: true })
       .toBuffer();
     if (cached) {
-      await mkdir(ctx.cacheDir!, { recursive: true });
+      await mkdir(cacheDir!, { recursive: true });
       await writeFile(cached, processed);
     }
   }

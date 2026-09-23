@@ -42,10 +42,13 @@ export type MockTtsOptions = {
  */
 export class MockTts implements TtsProvider {
   readonly name = "mock";
+  readonly voiceKey: string;
   private readonly msPerWord: number;
 
   constructor(options: MockTtsOptions = {}) {
-    this.msPerWord = 60_000 / (options.wordsPerMinute ?? 150);
+    const wpm = options.wordsPerMinute ?? 150;
+    this.msPerWord = 60_000 / wpm;
+    this.voiceKey = `mock:${wpm}`;
   }
 
   async synthesize(req: TtsRequest): Promise<TtsResult> {

@@ -32,7 +32,7 @@ import {
   type PipelineContext,
 } from "@crammer/pipeline";
 import { RunDirectory, isBefore } from "./artifacts.js";
-import { imageCacheDir, outputRoot, videoEntryPoint } from "./paths.js";
+import { cacheRoot, outputRoot, videoEntryPoint } from "./paths.js";
 import { banner, createLogger, ok } from "./logger.js";
 import { slugify } from "./slug.js";
 
@@ -74,7 +74,7 @@ export async function run(options: RunOptions): Promise<{ dir: string }> {
     cost,
     log,
     assetDir: runDir.assetDir,
-    cacheDir: imageCacheDir(),
+    cacheDir: cacheRoot(options.out),
   };
 
   const shouldRun = (stage: Stage) =>
@@ -171,7 +171,12 @@ export async function run(options: RunOptions): Promise<{ dir: string }> {
   // On a resumed run this records only the stages that actually ran, which is the
   // honest number for this invocation.
   storyboard.cost = cost.report();
-  await runDir.write("storyboard", storyboard);
+
+  // The fully-resolved storyboard ships as `final.json`. It deliberately does NOT
+  // overwrite `storyboard.json`: that is the stage-4 artefact, and clobbering it with
+  // the post-images result bakes image fallbacks in, so a later `--from images` would
+  // see TitleCards where photo scenes used to be and never retry them.
+  await runDir.writeFinal(storyboard);
   await writeRunOutputs(runDir.dir, storyboard, report);
 
   const rendered = await runStage(ctx, "render", () =>
@@ -189,9 +194,9 @@ export async function run(options: RunOptions): Promise<{ dir: string }> {
     ),
   );
 
-  // Re-write the storyboard with the render stage's cost included.
+  // Re-write it with the render stage's cost included.
   storyboard.cost = cost.report();
-  await runDir.write("storyboard", storyboard);
+  await runDir.writeFinal(storyboard);
 
   process.stdout.write(`\n${ok(`video.mp4 — ${formatSeconds(rendered.durationSeconds)}`)}\n`);
   return finish(runDir, cost, options);

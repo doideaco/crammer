@@ -116,6 +116,13 @@ export type TtsResult = {
 
 export interface TtsProvider {
   readonly name: string;
+  /**
+   * Stable identifier for what this provider will produce — provider, voice and model.
+   *
+   * The voice stage caches audio by (narration, voiceKey), so this has to change
+   * whenever the output would, or a cached clip in the wrong voice gets reused.
+   */
+  readonly voiceKey: string;
   synthesize(req: TtsRequest): Promise<TtsResult>;
 }
 
