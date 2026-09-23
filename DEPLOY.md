@@ -82,11 +82,31 @@ Two things that are not obvious and will bite:
   Connection Pooling. For London it is `aws-0-eu-west-2.pooler.supabase.com`, and the
   user is `postgres.<project-ref>`.
 
-### Email on the free tier
+### Email — do this before anyone else uses it
 
-Supabase's built-in SMTP is rate limited to a handful of messages an hour and is not
-meant for production. For a demo in front of people, set a custom SMTP provider in
-Authentication → Emails, or expect magic links to silently stop arriving.
+Supabase's built-in sender is rate limited to a handful of messages an hour and is
+explicitly not for production. It fails silently: no error in the app, no error in
+Supabase, the magic link simply never arrives. Nobody can sign in, and there is nothing
+to look at.
+
+Point it at a real provider:
+
+```bash
+SUPABASE_PROJECT_REF=<ref> RESEND_API_KEY=<key> CRAMMER_EMAIL_FROM="Crammer <no-reply@yourdomain.com>"   pnpm smtp:set
+```
+
+Resend's `onboarding@resend.dev` sender works without a verified domain, which is
+enough for a demo. Send yourself a magic link afterwards and confirm it arrives —
+this is the single most likely thing to be quietly broken.
+
+**If a link is needed right now and email is not working**, one can be minted directly:
+
+```bash
+curl -s -X POST "https://<ref>.supabase.co/auth/v1/admin/generate_link"   -H "apikey: $SUPABASE_SERVICE_ROLE_KEY"   -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY"   -H "Content-Type: application/json"   -d '{"type":"magiclink","email":"you@example.com","redirect_to":"https://<domain>/auth/callback"}'
+```
+
+Note `redirect_to` is a top-level field; putting it under `options` is silently ignored
+and you get a link back to the site root with no session.
 
 ## 3. Trigger.dev
 

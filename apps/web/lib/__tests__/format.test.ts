@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { STAGES } from "@crammer/schema";
-import { STAGE_LABELS, formatDuration, formatPence, stageStates } from "../format";
+import { STAGE_LABELS, formatDuration, formatPence, isQueueStalled, stageStates } from "../format";
 
 describe("STAGE_LABELS", () => {
   it("labels every stage, so the progress list can never render a blank row", () => {
@@ -48,6 +48,35 @@ describe("stageStates", () => {
   it("shows everything done once the run succeeds, whatever stage is recorded", () => {
     expect(stageStates("succeeded", null).every((s) => s.state === "done")).toBe(true);
     expect(stageStates("succeeded", "render").every((s) => s.state === "done")).toBe(true);
+  });
+});
+
+describe("isQueueStalled", () => {
+  const minutesAgo = (n: number) => new Date(Date.now() - n * 60_000).toISOString();
+
+  it("is not stalled while a worker could still reasonably claim it", () => {
+    expect(isQueueStalled({ status: "queued", createdAt: minutesAgo(1), eventCount: 0 })).toBe(
+      false,
+    );
+  });
+
+  it("is stalled once nothing has claimed it for minutes", () => {
+    expect(isQueueStalled({ status: "queued", createdAt: minutesAgo(10), eventCount: 0 })).toBe(
+      true,
+    );
+  });
+
+  it("is never stalled once something has logged an event", () => {
+    // The row may still say queued, but an event proves a worker is on it.
+    expect(isQueueStalled({ status: "queued", createdAt: minutesAgo(60), eventCount: 3 })).toBe(
+      false,
+    );
+  });
+
+  it("only applies to queued videos", () => {
+    for (const status of ["running", "succeeded", "failed", "refused"]) {
+      expect(isQueueStalled({ status, createdAt: minutesAgo(60), eventCount: 0 })).toBe(false);
+    }
   });
 });
 

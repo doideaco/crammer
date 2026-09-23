@@ -29,6 +29,10 @@ export async function GET(
       id: video.id,
       status: video.status,
       stage: video.stage,
+      createdAt: video.createdAt.toISOString(),
+      // Whether a completion email will actually be sent. Promising one when no mail
+      // provider is configured is just a lie told politely.
+      notifyByEmail: Boolean(process.env.RESEND_API_KEY),
       title: video.title,
       videoUrl: video.videoUrl,
       durationSeconds: video.durationSeconds,

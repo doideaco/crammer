@@ -63,6 +63,8 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
             stage: video.stage,
             error: video.error,
             costPence: Number(video.costPence),
+            createdAt: video.createdAt.toISOString(),
+            notifyByEmail: Boolean(process.env.RESEND_API_KEY),
             events: events.map((event) => ({
               id: event.id,
               stage: event.stage,

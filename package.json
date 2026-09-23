@@ -15,6 +15,7 @@
     "format": "prettier --write .",
     "import:run": "pnpm --filter @crammer/jobs exec tsx src/import-run.ts",
     "lint": "eslint .",
+    "smtp:set": "tsx scripts/set-supabase-smtp.ts",
     "studio": "pnpm --filter @crammer/video run studio",
     "sync:env": "tsx scripts/sync-env.ts",
     "test": "turbo run test",

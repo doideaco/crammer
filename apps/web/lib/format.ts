@@ -39,6 +39,27 @@ export function formatPence(pence: number): string {
   return `£${(pence / 100).toFixed(2)}`;
 }
 
+/**
+ * How long a video may sit at `queued` before we stop pretending it is fine.
+ *
+ * A worker claims within a couple of poll intervals, and a Trigger.dev run starts in
+ * seconds. Past this, nothing is consuming the queue and the honest thing is to say so
+ * rather than keep showing a spinner.
+ */
+export const QUEUE_STALL_SECONDS = 120;
+
+export function isQueueStalled(input: {
+  status: string;
+  createdAt: string | Date;
+  eventCount: number;
+}): boolean {
+  if (input.status !== "queued") return false;
+  // Any event means something picked it up, whatever the row still says.
+  if (input.eventCount > 0) return false;
+  const created = typeof input.createdAt === "string" ? new Date(input.createdAt) : input.createdAt;
+  return (Date.now() - created.getTime()) / 1000 > QUEUE_STALL_SECONDS;
+}
+
 export function formatWhen(value: Date | string): string {
   const date = typeof value === "string" ? new Date(value) : value;
   return date.toLocaleString("en-GB", {

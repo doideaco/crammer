@@ -3,13 +3,22 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Stage } from "@crammer/schema";
-import { STAGE_LABELS, formatPence, stageStates, type StageState } from "@/lib/format";
+import {
+  QUEUE_STALL_SECONDS,
+  STAGE_LABELS,
+  formatPence,
+  isQueueStalled,
+  stageStates,
+  type StageState,
+} from "@/lib/format";
 
 type StatusResponse = {
   status: string;
   stage: Stage | null;
   error: string | null;
   costPence: number;
+  createdAt: string;
+  notifyByEmail: boolean;
   events: { id: string; stage: Stage | null; level: string; message: string; createdAt: string }[];
 };
 
@@ -68,6 +77,11 @@ export function VideoProgress({ videoId, initial }: { videoId: string; initial: 
   const states = stageStates(state.status, state.stage);
   const done = state.status === "succeeded";
   const running = state.status === "queued" || state.status === "running";
+  const stalled = isQueueStalled({
+    status: state.status,
+    createdAt: state.createdAt,
+    eventCount: state.events.length,
+  });
 
   return (
     <div className="flex flex-col gap-8">
@@ -119,9 +133,28 @@ export function VideoProgress({ videoId, initial }: { videoId: string; initial: 
         </p>
       ) : null}
 
-      {done ? null : (
+      {/*
+        A queued video with nothing consuming the queue used to sit here showing a
+        cheerful "about ten minutes", which is how someone ends up refreshing for half
+        an hour wondering what is happening. Say the true thing instead.
+      */}
+      {stalled ? (
+        <div role="alert" className="rounded-sm border border-accent bg-accent-soft/30 px-4 py-3 text-sm">
+          <strong className="block">Nothing has picked this up.</strong>
+          <span className="mt-1 block text-ink-soft">
+            This has been queued for over {Math.round(QUEUE_STALL_SECONDS / 60)} minutes with no
+            worker claiming it. The video is saved and will start as soon as one is running — see
+            DEPLOY.md. Nothing is lost by leaving it.
+          </span>
+        </div>
+      ) : null}
+
+      {done || stalled ? null : (
         <p className="text-sm text-ink-muted" role="status">
-          This takes about ten minutes. You can close the tab — we will email you.
+          {state.status === "queued"
+            ? "Waiting for a worker to pick this up."
+            : "This takes about ten minutes."}
+          {state.notifyByEmail ? " You can close the tab — we will email you when it is done." : ""}
         </p>
       )}
     </div>
