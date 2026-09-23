@@ -9,6 +9,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./run": {
+      "types": "./dist/run.d.ts",
+      "default": "./dist/run.js"
     }
   },
   "files": [

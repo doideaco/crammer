@@ -16,6 +16,14 @@ export type RenderInput = {
   scale?: number;
   concurrency?: number;
   /**
+   * Path to a Chrome/Chromium binary.
+   *
+   * Left unset, Remotion downloads its own Chrome Headless Shell on first use — fine
+   * locally, but in a container that is a 93MB download on every cold start. Deploy
+   * targets that already ship a browser set this instead.
+   */
+  browserExecutable?: string;
+  /**
    * H.264 constant rate factor, lower being higher quality. Remotion defaults to 18,
    * which is near-lossless and produces very large files for what is mostly static
    * typography and slow pans. 21 is visually indistinguishable here at roughly half
@@ -43,6 +51,15 @@ export type RenderOutput = {
 export async function runRender(input: RenderInput, ctx: PipelineContext): Promise<RenderOutput> {
   const videoPath = join(input.outDir, "video.mp4");
 
+  // `PUPPETEER_EXECUTABLE_PATH` is what Trigger.dev's puppeteer extension sets, and
+  // what most container images that ship Chrome use, so it is honoured as a fallback.
+  const browserExecutable =
+    input.browserExecutable ??
+    process.env.REMOTION_BROWSER_EXECUTABLE ??
+    process.env.PUPPETEER_EXECUTABLE_PATH;
+
+  if (browserExecutable) ctx.log.info(`Using the browser at ${browserExecutable}.`);
+
   ctx.log.step("  bundling the Remotion project…");
   const serveUrl = await bundle({
     entryPoint: input.entryPoint,
@@ -59,6 +76,7 @@ export async function runRender(input: RenderInput, ctx: PipelineContext): Promi
     serveUrl,
     id: "Explainer",
     inputProps,
+    ...(browserExecutable ? { browserExecutable } : {}),
   });
 
   const frames = storyboardDuration(input.storyboard);
@@ -78,6 +96,7 @@ export async function runRender(input: RenderInput, ctx: PipelineContext): Promi
     serveUrl,
     codec: "h264",
     crf: input.crf ?? 21,
+    ...(browserExecutable ? { browserExecutable } : {}),
     outputLocation: videoPath,
     inputProps,
     ...(input.scale ? { scale: input.scale } : {}),

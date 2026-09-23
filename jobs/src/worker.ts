@@ -9,7 +9,7 @@
  */
 import { claimNextQueuedVideo, createDatabase } from "@crammer/db";
 import { createArtifactStore } from "./storage-factory.js";
-import { runVideo } from "./pipeline.js";
+import { runVideo } from "./run.js";
 import { videoEntryPoint } from "./paths.js";
 
 const POLL_INTERVAL_MS = Number(process.env.CRAMMER_WORKER_POLL_MS ?? 2000);

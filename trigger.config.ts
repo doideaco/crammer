@@ -1,4 +1,6 @@
 import { defineConfig } from "@trigger.dev/sdk";
+import { ffmpeg } from "@trigger.dev/build/extensions/core";
+import { puppeteer } from "@trigger.dev/build/extensions/puppeteer";
 
 /**
  * Trigger.dev configuration.
@@ -6,6 +8,16 @@ import { defineConfig } from "@trigger.dev/sdk";
  * `TRIGGER_PROJECT_REF` comes from the Trigger.dev dashboard. Without it — and without
  * TRIGGER_SECRET_KEY — the web app falls back to the polling worker, which is a
  * supported way to run M2 rather than a degraded one.
+ *
+ * The render stage drives a headless browser and stitches with ffmpeg, so the image
+ * needs both:
+ *
+ * - `puppeteer()` installs Chrome at /usr/bin/google-chrome-stable and sets
+ *   PUPPETEER_EXECUTABLE_PATH, which the render stage picks up. Without it Remotion
+ *   downloads its own 93MB Chrome Headless Shell on every cold start.
+ * - `ffmpeg()` provides the system binaries. Remotion ships its own compositor, but the
+ *   platform-specific package has to resolve for linux-x64 rather than the darwin-arm64
+ *   one installed on a Mac — which is why `external` leaves them to the runtime install.
  */
 export default defineConfig({
   project: process.env.TRIGGER_PROJECT_REF ?? "proj_crammer",
@@ -14,5 +26,11 @@ export default defineConfig({
   retries: {
     enabledInDev: false,
     default: { maxAttempts: 3, factor: 2, minTimeoutInMs: 5_000, maxTimeoutInMs: 60_000 },
+  },
+  build: {
+    extensions: [puppeteer(), ffmpeg()],
+    // Native and platform-specific binaries must be installed in the image for its own
+    // platform, not bundled from a developer's machine.
+    external: ["sharp", "@remotion/compositor-linux-x64-gnu", "@remotion/renderer"],
   },
 });

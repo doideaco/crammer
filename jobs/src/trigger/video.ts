@@ -3,8 +3,7 @@ import { STAGES, type Stage } from "@crammer/schema";
 import { getDatabase, markStatus } from "@crammer/db";
 import { createArtifactStore } from "../storage-factory.js";
 import { videoEntryPoint } from "../paths.js";
-import { TopicRefusedError, runStageForVideo } from "../stages.js";
-import { notifyReady, recordFailure } from "../pipeline.js";
+import { TopicRefusedError, notifyReady, recordFailure, runStageForVideo } from "../run.js";
 
 type Payload = { videoId: string };
 
