@@ -1,5 +1,5 @@
 import { defineConfig } from "@trigger.dev/sdk";
-import { ffmpeg } from "@trigger.dev/build/extensions/core";
+import { ffmpeg, syncEnvVars } from "@trigger.dev/build/extensions/core";
 import { puppeteer } from "@trigger.dev/build/extensions/puppeteer";
 
 /**
@@ -28,7 +28,33 @@ export default defineConfig({
     default: { maxAttempts: 3, factor: 2, minTimeoutInMs: 5_000, maxTimeoutInMs: 60_000 },
   },
   build: {
-    extensions: [puppeteer(), ffmpeg()],
+    extensions: [
+      puppeteer(),
+      ffmpeg(),
+      // Push the keys the pipeline needs at deploy time, from whatever environment the
+      // deploy runs in. An explicit list, not everything in scope: a build machine's
+      // environment holds plenty that has no business in a task.
+      syncEnvVars(() =>
+        [
+          "ANTHROPIC_API_KEY",
+          "ANTHROPIC_WORKSPACE_ID",
+          "CRAMMER_MODEL",
+          "ELEVENLABS_API_KEY",
+          "ELEVENLABS_VOICE_ID",
+          "WIKIMEDIA_USER_AGENT",
+          "UNSPLASH_ACCESS_KEY",
+          "PEXELS_API_KEY",
+          "RESEND_API_KEY",
+          "CRAMMER_EMAIL_FROM",
+          "DATABASE_URL",
+          "SUPABASE_URL",
+          "SUPABASE_SERVICE_ROLE_KEY",
+          "NEXT_PUBLIC_SITE_URL",
+        ]
+          .map((name) => ({ name, value: process.env[name] }))
+          .filter((entry): entry is { name: string; value: string } => Boolean(entry.value)),
+      ),
+    ],
     // Native and platform-specific binaries must be installed in the image for its own
     // platform, not bundled from a developer's machine.
     external: ["sharp", "@remotion/compositor-linux-x64-gnu", "@remotion/renderer"],

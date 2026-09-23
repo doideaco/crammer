@@ -110,12 +110,21 @@ and you get a link back to the site root with no session.
 
 ## 3. Trigger.dev
 
-Create a project at <https://cloud.trigger.dev>, then:
+At <https://cloud.trigger.dev>: create an **organisation**, then a **project** inside it.
+Copy the project ref from the project's settings — it looks like `proj_abcdefghijkl`.
+
+There is no API for creating either, so this part cannot be scripted.
 
 ```bash
 npx trigger.dev@latest login
-npx trigger.dev@latest deploy
+TRIGGER_PROJECT_REF=proj_… npx trigger.dev@latest deploy
 ```
+
+Run the deploy with the repo's `.env` loaded — `set -a && . ./.env && set +a` — because
+`syncEnvVars` in `trigger.config.ts` copies the provider keys into the Trigger.dev
+environment as part of the deploy. It pushes an explicit list, not everything in scope.
+Without that, every task fails on a missing `ANTHROPIC_API_KEY` and the keys have to be
+pasted into the dashboard one at a time.
 
 `trigger.config.ts` already declares what the render stage needs:
 
@@ -126,18 +135,15 @@ npx trigger.dev@latest deploy
 - `external` leaves `sharp` and Remotion's platform-specific compositor to the image's
   own install, so it resolves `linux-x64` rather than the `darwin-arm64` copy on a Mac.
 
-Set the same environment variables as Vercel in the Trigger.dev dashboard, **plus** the
-provider keys the pipeline needs:
+Finally, take the secret key from the project's API keys page and give it to Vercel:
 
-```
-ANTHROPIC_API_KEY, ANTHROPIC_WORKSPACE_ID, CRAMMER_MODEL
-ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID
-WIKIMEDIA_USER_AGENT, UNSPLASH_ACCESS_KEY, PEXELS_API_KEY
-RESEND_API_KEY, CRAMMER_EMAIL_FROM      (optional — otherwise mail goes to the log)
+```bash
+printf '%s' 'tr_prod_…' | vercel env add TRIGGER_SECRET_KEY production --force
+vercel deploy --prod
 ```
 
-Once `TRIGGER_SECRET_KEY` is set on Vercel, the web app triggers runs automatically —
-`createJobQueue()` switches from the polling queue to Trigger.dev on its own.
+With `TRIGGER_SECRET_KEY` set, `createJobQueue()` switches from the polling queue to
+Trigger.dev on its own — no code change.
 
 ### The untested part
 
