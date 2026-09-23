@@ -10,6 +10,7 @@ export default tseslint.config(
       "**/.turbo/**",
       // Build output and vendored files, not source.
       "**/.next/**",
+      "**/.trigger/**",
       "**/next-env.d.ts",
       "supabase/**",
       "packages/db/migrations/**",
