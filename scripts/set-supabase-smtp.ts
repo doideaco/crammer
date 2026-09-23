@@ -54,7 +54,8 @@ const response = await fetch(`https://api.supabase.com/v1/projects/${ref}/config
     smtp_admin_email: senderEmail,
     smtp_sender_name: senderName,
     smtp_host: "smtp.resend.com",
-    smtp_port: 465,
+    // The API wants this as a string, despite being a port number.
+    smtp_port: "465",
     smtp_user: "resend",
     smtp_pass: apiKey,
     // The built-in sender's 1-per-minute cap is what makes testing painful; a real
