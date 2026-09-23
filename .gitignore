@@ -18,3 +18,10 @@ next-env.d.ts
 # Supabase local stack
 supabase/.temp/
 supabase/.branches/
+
+# Vercel
+.vercel
+
+# Every env file except the template, which is meant to be committed.
+.env*
+!.env.example
